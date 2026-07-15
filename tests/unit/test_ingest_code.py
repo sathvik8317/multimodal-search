@@ -138,3 +138,147 @@ def test_context_header_includes_class_for_method_but_not_function():
     func_row = _row_by_id(rows, "code:src/ingest/base.py#_embed_and_write")
     assert "# class: PdfIngester" in method_row.content_text
     assert "# class:" not in func_row.content_text
+
+
+# --- zero-method (pure data-container) classes -------------------------------------------
+
+
+def _ingest_source(tmp_path, source: str, filename: str = "module.py"):
+    corpus_root = tmp_path
+    path = corpus_root / filename
+    path.write_text(source)
+    return ingest_code_file(path, corpus_root, FakeEmbeddingClient())
+
+
+def test_zero_method_class_with_docstring_and_fields_gets_a_class_row(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+class Config:
+    """Runtime configuration."""
+    host: str
+    port: int = 8080
+''',
+    )
+    ids = {r.id for r in rows}
+    assert "code:module.py#Config" in ids
+
+
+def test_zero_method_class_row_metadata_kind_is_class(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+class Config:
+    """Runtime configuration."""
+    host: str
+    port: int = 8080
+''',
+    )
+    row = _row_by_id(rows, "code:module.py#Config")
+    metadata = json.loads(row.metadata)
+    assert metadata["kind"] == "class"
+    assert metadata["qualname"] == "Config"
+    assert metadata["lang"] == "python"
+
+
+def test_zero_method_class_content_contains_docstring_and_field_signatures(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+class Config:
+    """Runtime configuration."""
+    host: str
+    port: int = 8080
+''',
+    )
+    row = _row_by_id(rows, "code:module.py#Config")
+    assert "Runtime configuration." in row.content_text
+    assert "host: str" in row.content_text
+    assert "port: int = 8080" in row.content_text
+
+
+def test_zero_method_class_with_only_docstring_no_fields_still_gets_a_row(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+class Marker:
+    """A marker class with no fields."""
+''',
+    )
+    ids = {r.id for r in rows}
+    assert "code:module.py#Marker" in ids
+
+
+def test_zero_method_class_with_only_fields_no_docstring_still_gets_a_row(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+class Point:
+    x: int
+    y: int
+''',
+    )
+    ids = {r.id for r in rows}
+    assert "code:module.py#Point" in ids
+
+
+def test_truly_empty_class_produces_no_row(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+class Empty:
+    pass
+''',
+    )
+    assert rows == []
+
+
+def test_decorated_zero_method_class_still_gets_a_class_row(tmp_path):
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+from dataclasses import dataclass
+
+
+@dataclass
+class Point:
+    """A point in 2D space."""
+    x: int
+    y: int = 0
+''',
+    )
+    ids = {r.id for r in rows}
+    assert "code:module.py#Point" in ids
+    row = _row_by_id(rows, "code:module.py#Point")
+    assert "@dataclass" in row.content_text
+    assert "x: int" in row.content_text
+
+
+def test_class_with_at_least_one_method_does_not_also_get_a_class_row(tmp_path):
+    # PdfIngester (from the golden fixture) has one method and must NOT also
+    # produce a separate "class" row -- this fix is scoped to zero-method
+    # classes only.
+    rows = _rows()
+    ids = {r.id for r in rows}
+    assert "code:src/ingest/base.py#PdfIngester" not in ids
+
+
+def test_decorated_top_level_function_is_not_silently_skipped(tmp_path):
+    # Side-effect of unwrapping decorated_definition nodes to find zero-method
+    # classes: a decorated top-level function must still be found too.
+    rows = _ingest_source(
+        tmp_path,
+        '''\
+import functools
+
+
+@functools.lru_cache
+def compute(x):
+    """Compute something expensive."""
+    return x * 2
+''',
+    )
+    ids = {r.id for r in rows}
+    assert "code:module.py#compute" in ids
+    row = _row_by_id(rows, "code:module.py#compute")
+    assert "@functools.lru_cache" in row.content_text
