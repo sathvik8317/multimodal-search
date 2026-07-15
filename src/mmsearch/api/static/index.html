@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Multimodal Search</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 860px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  h1 { font-size: 1.4rem; }
+  form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+  input[type="search"] {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+  }
+  button {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .results { display: flex; flex-direction: column; gap: 0.75rem; }
+  .card {
+    border: 1px solid #8884;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+  .card img {
+    max-width: 96px;
+    max-height: 96px;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+  .card .meta { flex: 1; }
+  .card .snippet { margin: 0.25rem 0; }
+  .card .score { font-size: 0.85rem; opacity: 0.7; }
+  .status { opacity: 0.7; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>Multimodal Search</h1>
+<form id="search-form">
+  <input id="query" type="search" name="q" placeholder="Search PDFs, diagrams, tables, code..." autofocus />
+  <button type="submit">Search</button>
+</form>
+<div id="status" class="status"></div>
+<div id="results" class="results"></div>
+
+<script>
+const form = document.getElementById("search-form");
+const queryInput = document.getElementById("query");
+const resultsEl = document.getElementById("results");
+const statusEl = document.getElementById("status");
+
+function renderResults(results) {
+  resultsEl.innerHTML = "";
+  if (results.length === 0) {
+    statusEl.textContent = "No results.";
+    return;
+  }
+  statusEl.textContent = `${results.length} result(s)`;
+  for (const result of results) {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    if (result.thumbnail_ref) {
+      const img = document.createElement("img");
+      img.src = `/thumbnails/${result.thumbnail_ref}`;
+      img.alt = result.id;
+      card.appendChild(img);
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+
+    const snippet = document.createElement("p");
+    snippet.className = "snippet";
+    snippet.textContent = result.snippet;
+    meta.appendChild(snippet);
+
+    const score = document.createElement("div");
+    score.className = "score";
+    score.textContent = `${result.modality} · score ${Number(result.score).toFixed(3)} · ${result.source_path}`;
+    meta.appendChild(score);
+
+    card.appendChild(meta);
+    resultsEl.appendChild(card);
+  }
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const q = queryInput.value.trim();
+  if (!q) return;
+
+  statusEl.textContent = "Searching...";
+  resultsEl.innerHTML = "";
+
+  try {
+    const response = await fetch(`/search?q=${encodeURIComponent(q)}`);
+    if (!response.ok) {
+      statusEl.textContent = `Search failed (${response.status})`;
+      return;
+    }
+    const results = await response.json();
+    renderResults(results);
+  } catch (err) {
+    statusEl.textContent = "Search failed.";
+  }
+});
+</script>
+</body>
+</html>
