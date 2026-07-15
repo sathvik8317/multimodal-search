@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mmsearch"
+version = "0.1.0"
+description = "Multimodal Search for Engineers"
+requires-python = ">=3.11"
+dependencies = [
+    "lancedb>=0.13",
+    "pyarrow>=16.0",
+    "cohere>=5.0",
+    "pyyaml>=6.0",
+    "pymupdf>=1.24",
+    "pillow>=10.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mmsearch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: tests that call real external APIs (opt-in, not run by default)",
+]
+addopts = "-m \"not live\""

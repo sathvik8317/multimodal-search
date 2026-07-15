@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# LanceDB data, thumbnails, caption cache -- generated at ingest time, not source
+/data/
+
+# secrets
+.env

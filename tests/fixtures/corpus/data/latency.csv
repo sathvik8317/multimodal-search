@@ -1,0 +1,4 @@
+endpoint,p50_ms,p95_ms,p99_ms
+/search,12,38,64
+/ingest,140,410,780
+/rerank,9,22,41
