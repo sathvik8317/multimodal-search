@@ -34,7 +34,7 @@ dev = [
 #   pip install torch --index-url https://download.pytorch.org/whl/cu124
 # then `pip install -e ".[local-captioner]"` for the rest.
 local-captioner = [
-    "transformers>=4.44",
+    "transformers>=4.44,<5.0",  # moondream2's trust_remote_code modeling code breaks on transformers 5.x
     "einops>=0.8",
 ]
 

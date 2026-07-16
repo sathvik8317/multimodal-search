@@ -86,7 +86,7 @@ class LocalCaptioner:
         import torch
         from transformers import AutoModelForCausalLM
 
-        kwargs = {"trust_remote_code": True, "torch_dtype": torch.float16}
+        kwargs = {"trust_remote_code": True, "dtype": torch.float16}
         if self._model_revision is not None:
             kwargs["revision"] = self._model_revision
 
