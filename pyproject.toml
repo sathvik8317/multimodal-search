@@ -19,6 +19,9 @@ dependencies = [
     "tree-sitter-language-pack>=0.2",
 ]
 
+[project.scripts]
+mmsearch = "mmsearch.ingest.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
