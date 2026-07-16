@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from mmsearch import db
@@ -108,3 +109,16 @@ def test_main_dispatches_ingest_command_to_run_ingest_command(monkeypatch, tmp_p
 
     assert exit_code == 0
     assert calls == [tmp_path]
+
+
+# --- .env loading -----------------------------------------------------------------------
+
+def test_main_loads_cohere_api_key_from_dotenv_file(monkeypatch, tmp_path):
+    monkeypatch.delenv("COHERE_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("COHERE_API_KEY=from-dotenv-file\n")
+    monkeypatch.setattr("mmsearch.ingest.cli._run_ingest_command", lambda path, **kwargs: 0)
+
+    main(["ingest", str(tmp_path)])
+
+    assert os.environ["COHERE_API_KEY"] == "from-dotenv-file"

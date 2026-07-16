@@ -17,6 +17,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "tree-sitter-language-pack>=0.2",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]
