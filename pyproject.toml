@@ -28,6 +28,15 @@ dev = [
     "pytest-cov>=5.0",
     "httpx2>=2.0",
 ]
+# Only ingest/documents.py's diagram/scanned-page captioning path needs these.
+# The API, retrieval, and eval surfaces never import torch. For a CUDA build
+# on Windows, install torch separately first, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# then `pip install -e ".[local-captioner]"` for the rest.
+local-captioner = [
+    "transformers>=4.44",
+    "einops>=0.8",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mmsearch"]
