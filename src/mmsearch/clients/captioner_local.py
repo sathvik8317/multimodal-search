@@ -21,6 +21,11 @@ from pathlib import Path
 
 from mmsearch import config
 
+# Pinned for reproducibility -- unlike model_id, which resolves to whatever
+# "main" currently points to, an unpinned revision would silently change
+# caption output (and thus embedded content_text) across ingest runs.
+_DEFAULT_MODEL_REVISION = "2025-06-21"
+
 _DESCRIBE_PROMPT = "Describe this image in 2-3 sentences."
 _TRANSCRIBE_PROMPT = (
     "Transcribe any text visible in this image, verbatim. "
@@ -39,12 +44,23 @@ def _compose_caption(description: str, transcribed_text: str) -> str:
     return f"{description}\n\nVisible text: {transcribed_text}"
 
 
+def _from_pretrained_kwargs(model_revision: str | None, dtype) -> dict:
+    """Build the kwargs for AutoModelForCausalLM.from_pretrained. Pure and
+    torch-free (dtype is passed through opaquely) so revision pass-through is
+    directly testable without loading torch.
+    """
+    kwargs = {"trust_remote_code": True, "dtype": dtype}
+    if model_revision is not None:
+        kwargs["revision"] = model_revision
+    return kwargs
+
+
 class LocalCaptioner:
     def __init__(
         self,
         cache_dir: Path = config.CAPTION_CACHE_DIR,
         model_id: str = "vikhyatk/moondream2",
-        model_revision: str | None = None,
+        model_revision: str | None = _DEFAULT_MODEL_REVISION,
         _query_fn: Callable[[bytes], str] | None = None,
     ) -> None:
         self._cache_dir = Path(cache_dir)
@@ -86,10 +102,7 @@ class LocalCaptioner:
         import torch
         from transformers import AutoModelForCausalLM
 
-        kwargs = {"trust_remote_code": True, "dtype": torch.float16}
-        if self._model_revision is not None:
-            kwargs["revision"] = self._model_revision
-
+        kwargs = _from_pretrained_kwargs(model_revision=self._model_revision, dtype=torch.float16)
         model = AutoModelForCausalLM.from_pretrained(self._model_id, **kwargs)
         model = model.to("cuda" if torch.cuda.is_available() else "cpu")
         model.eval()

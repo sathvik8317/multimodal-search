@@ -4,12 +4,47 @@ injected -- so these tests never import torch/transformers.
 """
 
 import sys
+from pathlib import Path
 
-from mmsearch.clients.captioner_local import LocalCaptioner, _compose_caption
+from mmsearch.clients.captioner_local import (
+    _DEFAULT_MODEL_REVISION,
+    LocalCaptioner,
+    _compose_caption,
+    _from_pretrained_kwargs,
+)
 
 
 def test_torch_is_not_imported_by_this_module():
     assert "torch" not in sys.modules
+
+
+# --- model revision pinning ------------------------------------------------------------
+
+def test_default_model_revision_is_pinned_not_none():
+    captioner = LocalCaptioner(cache_dir=Path("unused"), _query_fn=lambda b: "x")
+    assert captioner._model_revision == "2025-06-21"
+    assert captioner._model_revision == _DEFAULT_MODEL_REVISION
+
+
+def test_from_pretrained_kwargs_passes_through_the_pinned_revision():
+    kwargs = _from_pretrained_kwargs(model_revision="2025-06-21", dtype="fp16-placeholder")
+    assert kwargs["revision"] == "2025-06-21"
+
+
+def test_from_pretrained_kwargs_always_includes_trust_remote_code_and_dtype():
+    kwargs = _from_pretrained_kwargs(model_revision="2025-06-21", dtype="fp16-placeholder")
+    assert kwargs["trust_remote_code"] is True
+    assert kwargs["dtype"] == "fp16-placeholder"
+
+
+def test_from_pretrained_kwargs_omits_revision_when_none():
+    kwargs = _from_pretrained_kwargs(model_revision=None, dtype="fp16-placeholder")
+    assert "revision" not in kwargs
+
+
+def test_model_revision_is_configurable_via_constructor():
+    captioner = LocalCaptioner(cache_dir=Path("unused"), model_revision="some-other-tag", _query_fn=lambda b: "x")
+    assert captioner._model_revision == "some-other-tag"
 
 
 # --- _compose_caption (pure) ---------------------------------------------------------
