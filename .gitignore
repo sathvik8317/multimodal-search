@@ -10,3 +10,6 @@ htmlcov/
 
 # secrets
 .env
+
+# live session working log -- local paths/session IDs, not a project artifact
+HANDOFF.md
