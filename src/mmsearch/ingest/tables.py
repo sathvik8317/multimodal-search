@@ -6,6 +6,7 @@ import csv
 import json
 from pathlib import Path
 
+from mmsearch import config
 from mmsearch.clients.protocols import EmbedInput, EmbeddingClient
 from mmsearch.schema import Modality, Row, TextSource, make_id
 
@@ -23,6 +24,7 @@ def ingest_table(
     table_path: Path,
     corpus_root: Path,
     embedding_client: EmbeddingClient,
+    max_rows: int = config.MAX_TABLE_ROWS,
 ) -> Row:
     with open(table_path, newline="", encoding="utf-8") as f:
         reader = csv.reader(f)
@@ -30,8 +32,11 @@ def ingest_table(
 
     columns = rows[0] if rows else []
     data_rows = rows[1:]
+    total_rows = len(data_rows)
+    truncated = total_rows > max_rows
+    embedded_rows = data_rows[:max_rows] if truncated else data_rows
 
-    content_text = _rows_to_markdown(columns, data_rows)
+    content_text = _rows_to_markdown(columns, embedded_rows)
 
     vectors = embedding_client.embed_documents([EmbedInput(text=content_text)])
     vector = vectors[0]
@@ -40,9 +45,11 @@ def ingest_table(
 
     metadata = json.dumps(
         {
-            "n_rows": len(data_rows),
+            "n_rows": len(embedded_rows),
             "n_cols": len(columns),
             "columns": columns,
+            "truncated": truncated,
+            "total_rows": total_rows,
         }
     )
 

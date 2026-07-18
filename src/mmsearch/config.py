@@ -19,3 +19,8 @@ FETCH_N = 50
 RERANK_M = 25
 TOP_K = 5
 RRF_K = 60
+
+# Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
+# input limits or produce a semantically useless single-vector embedding.
+# The full row count is still recorded in Row.metadata (truncated/total_rows).
+MAX_TABLE_ROWS = 200
