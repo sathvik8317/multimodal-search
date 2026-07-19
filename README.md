@@ -27,6 +27,18 @@ with. Full design rationale is in [`PLAN.md`](PLAN.md).
 pip install -e ".[dev]"
 ```
 
+Build the frontend (requires Node 20+). The UI is a React + Vite app in
+[`frontend/`](frontend); its build output is gitignored, so **a fresh clone
+serves nothing at `/ui` until this runs**:
+
+```
+cd frontend && npm install && npm run build
+```
+
+That emits into `src/mmsearch/api/static/`, which FastAPI already serves — no
+separate frontend server in production. Design rationale and the dev-server
+workflow are in [`FRONTEND_PLAN.md`](FRONTEND_PLAN.md).
+
 Create `.env` at the repo root:
 
 ```
@@ -45,7 +57,15 @@ python -m mmsearch.ingest.cli ingest corpus/
 uvicorn mmsearch.api.server:app --host 127.0.0.1 --port 8000
 ```
 
-Open **http://127.0.0.1:8000/ui** and search.
+Open **http://127.0.0.1:8000/ui** and search. (If that page is blank or 404s,
+the frontend build step above hasn't been run.)
+
+To iterate on the UI itself, run Vite's dev server alongside uvicorn — it proxies
+`/search` and `/thumbnails` to port 8000 and gives hot reload:
+
+```
+cd frontend && npm run dev      # http://127.0.0.1:5173
+```
 
 ## Eval results
 
@@ -110,7 +130,7 @@ content.
 
 ## Tests
 
-240 tests, all green, all run against fakes/fixtures — no real API calls,
+239 tests, all green, all run against fakes/fixtures — no real API calls,
 no torch/GPU load except when actually exercising the local captioner:
 
 ```

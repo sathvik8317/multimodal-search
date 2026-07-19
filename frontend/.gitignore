@@ -1,0 +1,6 @@
+node_modules/
+*.local
+.vite/
+
+# tsc -b incremental cache, regenerated every build
+*.tsbuildinfo

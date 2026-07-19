@@ -8,6 +8,15 @@ htmlcov/
 # LanceDB data, thumbnails, caption cache -- generated at ingest time, not source
 /data/
 
+# Vite build output -- regenerate with `npm install && npm run build` in frontend/.
+# The tracked .gitkeep is load-bearing, not cosmetic: StaticFiles(directory=...)
+# in api/main.py raises at app-creation time if this directory does not exist,
+# which fails the entire test suite on a fresh clone, not just the UI tests.
+# `emptyOutDir` wipes everything except .git, so the build re-emits .gitkeep by
+# copying it from frontend/public/.
+src/mmsearch/api/static/*
+!src/mmsearch/api/static/.gitkeep
+
 # secrets
 .env
 

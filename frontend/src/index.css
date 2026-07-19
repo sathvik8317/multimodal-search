@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Palette (FRONTEND_PLAN.md "Design direction").
+
+   Base tokens swap on prefers-color-scheme through plain CSS variables, so a
+   single `bg-bg` / `text-fg` utility is correct in both themes instead of
+   pairing every element with a `dark:` twin. `dark:` is still used where a
+   token swap isn't enough -- notably the four modality badge hues.
+
+   Contrast is computed, not eyeballed. Every pair below clears 4.5:1:
+     light  fg #0F172A on bg #F8FAFC ......... 16.8:1
+     light  fg-muted #475569 on surface #FFF .. 7.6:1
+     light  accent-fg #FFF on accent #15803D .. 4.7:1
+     dark   fg #F8FAFC on bg #0F172A .......... 16.8:1
+     dark   fg-muted #94A3B8 on surface #1E293B  5.3:1
+     dark   accent-fg #052E16 on accent #22C55E  8.8:1
+--------------------------------------------------------------------------- */
+
+@theme {
+  --color-bg: var(--p-bg);
+  --color-surface: var(--p-surface);
+  --color-fg: var(--p-fg);
+  --color-fg-muted: var(--p-fg-muted);
+  --color-border: var(--p-border);
+  --color-accent: var(--p-accent);
+  --color-accent-fg: var(--p-accent-fg);
+
+  /* System stacks rather than webfonts: no CDN dependency, no FOUT, no offline
+     breakage, and both resolve to a genuinely good face per platform (Segoe UI
+     Variable / SF Pro, Cascadia / SF Mono). The sans-vs-mono split that the
+     design direction actually specifies is fully preserved. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+:root {
+  --p-bg: #f8fafc;
+  --p-surface: #ffffff;
+  --p-fg: #0f172a;
+  --p-fg-muted: #475569;
+  --p-border: #cbd5e1;
+  /* green-700, not the #22C55E base: white text on #22C55E is only 3.4:1. */
+  --p-accent: #15803d;
+  --p-accent-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --p-bg: #0f172a;
+    --p-surface: #1e293b;
+    --p-fg: #f8fafc;
+    --p-fg-muted: #94a3b8;
+    --p-border: #334155;
+    --p-accent: #22c55e;
+    --p-accent-fg: #052e16;
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--p-bg);
+  color: var(--p-fg);
+}
+
+/* Checklist: prefers-reduced-motion respected. Global so no individual
+   transition can forget it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

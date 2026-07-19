@@ -93,16 +93,11 @@ def test_thumbnails_serves_real_file(tmp_path):
 
 
 # --- /ui static mount -----------------------------------------------------------------------
-
-def test_ui_returns_html_with_search_input_and_fetch_call(tmp_path):
-    app = create_app(fake_search_fn, thumbnails_dir=tmp_path)
-    client = TestClient(app)
-
-    response = client.get("/ui")
-
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
-    body = response.text
-    assert "<input" in body
-    assert "/search" in body
-    assert "fetch(" in body
+#
+# Deliberately untested. /ui serves the Vite build output (see FRONTEND_PLAN.md),
+# which is gitignored and absent until `npm run build` runs -- so any assertion
+# about its contents fails on a fresh clone and in CI. The previous test here
+# asserted the body contained "<input" and "fetch(", which stopped being true the
+# moment the UI became a bundled artifact rather than a hand-written file. What
+# remains is one line of framework mount config with nothing project-specific to
+# assert. The /thumbnails mount above is still tested: it serves real app data.
