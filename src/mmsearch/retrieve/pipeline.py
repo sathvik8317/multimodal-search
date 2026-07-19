@@ -26,13 +26,41 @@ _SNIPPET_LEN = 200
 _VALID_MODES = ("vector-only", "rrf-only", "rrf+rerank")
 
 
+def _build_snippet(content_text: str, modality: Modality) -> str:
+    """Modality-aware display snippet. A flat content_text[:_SNIPPET_LEN]
+    slice works fine for prose (pdf_page, diagram) but is wrong for
+    structured content:
+      - table: a 200-char slice barely covers the header row, cutting the
+        first data row mid-value. Show the header + separator + first 3
+        complete data rows instead (split on newline, never mid-row).
+      - code: content_text is prefixed with a "# file: ... / # language:
+        ... [/ # class: ...]" context header (2 lines for top-level
+        functions/classes, 3 for methods) that's deliberately embedded for
+        retrieval quality but reads as noise in a result card. Skip past
+        all leading '#' comment lines so the snippet starts at the actual
+        def/class line, regardless of header length.
+    """
+    if modality is Modality.TABLE:
+        lines = content_text.split("\n")
+        return "\n".join(lines[:5])  # header + separator + up to 3 data rows
+
+    if modality is Modality.CODE:
+        lines = content_text.split("\n")
+        start = 0
+        while start < len(lines) and lines[start].lstrip().startswith("#"):
+            start += 1
+        return "\n".join(lines[start:])[:_SNIPPET_LEN]
+
+    return content_text[:_SNIPPET_LEN]
+
+
 def _row_to_result(row: dict, score: float) -> SearchResult:
-    content_text = row["content_text"]
+    modality = Modality(row["modality"])
     return SearchResult(
         id=row["id"],
-        modality=Modality(row["modality"]),
+        modality=modality,
         score=score,
-        snippet=content_text[:_SNIPPET_LEN],
+        snippet=_build_snippet(row["content_text"], modality),
         thumbnail_ref=row["thumbnail_ref"],
         source_path=row["source_path"],
         text_source=TextSource(row["text_source"]),

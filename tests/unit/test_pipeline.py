@@ -4,7 +4,7 @@ from mmsearch import config
 from mmsearch.clients.fakes import FakeEmbeddingClient, FakeReranker
 from mmsearch.clients.protocols import EmbedInput, RerankResult
 from mmsearch.db import ensure_fts_index, open_table, upsert
-from mmsearch.retrieve.pipeline import build_search_fn
+from mmsearch.retrieve.pipeline import _row_to_result, build_search_fn
 from mmsearch.retrieve.types import SearchResult
 from mmsearch.schema import Modality, Row, TextSource
 
@@ -144,3 +144,125 @@ def test_rrf_only_calls_both_retrievers_but_never_reranker(table, monkeypatch):
     assert "fts" in calls
     assert "vector" in calls
     assert 0 < len(results) <= 3
+
+
+# --- snippet construction (modality-aware) ---------------------------------------------------
+
+def _table_row(content_text: str) -> dict:
+    return {
+        "id": "tbl:data/car.csv",
+        "modality": "table",
+        "content_text": content_text,
+        "thumbnail_ref": "",
+        "source_path": "data/car.csv",
+        "text_source": "table_markdown",
+    }
+
+
+def _code_row(content_text: str, id_: str = "code:src/extractor.py#dedupe_preserve_order") -> dict:
+    return {
+        "id": id_,
+        "modality": "code",
+        "content_text": content_text,
+        "thumbnail_ref": "",
+        "source_path": "src/extractor.py",
+        "text_source": "code_source",
+    }
+
+
+_TABLE_MARKDOWN = (
+    "| Car_Name | Year | Selling_Price | Present_Price | Kms_Driven | Fuel_Type | Seller_Type | Transmission | Owner |\n"
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+    "| ritz | 2014 | 3.35 | 5.59 | 27000 | Petrol | Dealer | Manual | 0 |\n"
+    "| sx4 | 2013 | 4.75 | 9.54 | 43000 | Diesel | Dealer | Manual | 0 |\n"
+    "| ciaz | 2017 | 7.25 | 9.85 | 6900 | Petrol | Dealer | Manual | 0 |\n"
+    "| wagon r | 2011 | 2.85 | 4.15 | 5200 | Petrol | Dealer | Manual | 0 |\n"
+)
+
+_CODE_TEXT_FUNCTION = (
+    "# file: src/extractor.py\n"
+    "# language: python\n"
+    "def dedupe_preserve_order(values):\n"
+    "    seen = set()\n"
+    "    return [v for v in values if not (v in seen or seen.add(v))]\n"
+)
+
+_CODE_TEXT_METHOD = (
+    "# file: src/ingest/base.py\n"
+    "# language: python\n"
+    "# class: PdfIngester\n"
+    "def rasterize(self, page):\n"
+    "    return page.get_pixmap()\n"
+)
+
+
+def test_table_snippet_contains_at_least_three_full_data_rows():
+    result = _row_to_result(_table_row(_TABLE_MARKDOWN), score=1.0)
+
+    lines = result.snippet.splitlines()
+    data_rows = lines[2:]  # skip header + separator
+    assert len(data_rows) >= 3
+    for line in data_rows:
+        # no mid-row cut: every data row line ends with the closing pipe
+        assert line.rstrip().endswith("|")
+
+
+def test_table_snippet_header_and_separator_intact():
+    result = _row_to_result(_table_row(_TABLE_MARKDOWN), score=1.0)
+
+    lines = result.snippet.splitlines()
+    assert lines[0].startswith("| Car_Name")
+    assert set(lines[1].replace("|", "").strip()) <= {"-", " "}
+
+
+def test_code_snippet_starts_with_def_not_comment_header():
+    result = _row_to_result(_code_row(_CODE_TEXT_FUNCTION), score=1.0)
+
+    assert result.snippet.lstrip().startswith("def ")
+    assert "# file:" not in result.snippet
+    assert "# language:" not in result.snippet
+
+
+def test_code_snippet_for_a_method_skips_the_three_line_header():
+    # Methods get a 3-line header (file, language, class) from ingest/code.py,
+    # not 2 -- the snippet must still land on the def line, not "# class: ...".
+    result = _row_to_result(
+        _code_row(_CODE_TEXT_METHOD, id_="code:src/ingest/base.py#PdfIngester.rasterize"),
+        score=1.0,
+    )
+
+    assert result.snippet.lstrip().startswith("def ")
+    assert "# class:" not in result.snippet
+
+
+def test_pdf_snippet_behavior_is_unchanged_flat_200_char_slice():
+    long_text = "A" * 300
+    row = {
+        "id": "pdf:doc.pdf#p1",
+        "modality": "pdf_page",
+        "content_text": long_text,
+        "thumbnail_ref": "",
+        "source_path": "doc.pdf",
+        "text_source": "pdf_text_layer",
+    }
+
+    result = _row_to_result(row, score=1.0)
+
+    assert result.snippet == long_text[:200]
+    assert len(result.snippet) == 200
+
+
+def test_diagram_snippet_behavior_is_unchanged_flat_200_char_slice():
+    long_text = "B" * 300
+    row = {
+        "id": "img:diagram.png",
+        "modality": "diagram",
+        "content_text": long_text,
+        "thumbnail_ref": "diagram.png",
+        "source_path": "diagram.png",
+        "text_source": "vlm_caption",
+    }
+
+    result = _row_to_result(row, score=1.0)
+
+    assert result.snippet == long_text[:200]
