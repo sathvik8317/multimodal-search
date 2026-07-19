@@ -1,0 +1,79 @@
+# --- code ---
+- query: "function that deduplicates a list while preserving order"
+  expected: ["code:src/extractor.py#dedupe_preserve_order"]
+
+- query: "how does the extractor detect which programming language was used"
+  expected: ["code:src/extractor.py#guess_language"]
+
+- query: "function that safely parses JSON even if the model wraps it in extra text"
+  expected: ["code:src/extractor.py#safe_json_loads"]
+
+- query: "how does the system decide between ASP.NET Core and FastAPI as the framework"
+  expected: ["code:src/extractor.py#guess_framework"]
+
+- query: "function that guesses the feature name from a session transcript"
+  expected: ["code:src/extractor.py#guess_feature"]
+
+- query: "function that calls Ollama to extract engineering memory from a session"
+  expected: ["code:src/extractor.py#call_ollama"]
+
+- query: "validation logic that runs after a Row object is constructed"
+  expected: ["code:src/schema.py#Row.__post_init__"]
+
+- query: "the make_id function that mints ids for search rows"
+  expected: ["code:src/schema.py#make_id"]
+
+- query: "function that converts a list of Row objects into a PyArrow table"
+  expected: ["code:src/schema.py#rows_to_table"]
+
+- query: "the Modality enum listing pdf_page diagram table and code types"
+  expected: ["code:src/schema.py#Modality"]
+
+# --- diagrams ---
+- query: "diagram showing the transformer encoder decoder architecture"
+  expected: ["img:docs/transformers.png"]
+
+- query: "diagram of the RRF fusion and reranking retrieval pipeline"
+  expected: ["img:docs/retrieval_pipeline_diagram.png"]
+
+- query: "diagram of the ColQwen2.5 and Qdrant document agent architecture"
+  expected: ["img:docs/colqwen_qdrant_doc_agent_diagram.png"]
+
+# --- tables ---
+- query: "car pricing dataset with kilometers driven and fuel type"
+  expected: ["tbl:data/car_prediction_data.csv"]
+
+- query: "automobile dataset with horsepower and torque columns"
+  expected: ["tbl:data/automobile_dataset.csv"]
+
+- query: "ecommerce sales data with customer rating and delivery days"
+  expected: ["tbl:data/ecommerce_sales_analytics_5000.csv"]
+
+- query: "table listing selling price versus present price for used cars"
+  expected: ["tbl:data/car_prediction_data.csv"]
+
+- query: "sales table broken down by product category and region"
+  expected: ["tbl:data/ecommerce_sales_analytics_5000.csv"]
+
+# --- pdfs ---
+- query: "what is low-rank adaptation of large language models"
+  expected: ["pdf:specs/2106.09685v2.pdf#p1"]
+
+- query: "LoRA reduces trainable parameters by freezing pretrained weights"
+  expected: ["pdf:specs/2106.09685v2.pdf#p1"]
+
+- query: "the scaled dot-product attention formula"
+  expected: ["pdf:specs/NIPS-2017-attention-is-all-you-need-Paper.pdf#p4"]
+
+- query: "multi-head attention mechanism explanation"
+  expected: ["pdf:specs/NIPS-2017-attention-is-all-you-need-Paper.pdf#p4"]
+
+- query: "how does ColPali retrieve documents using vision language models"
+  expected: ["pdf:specs/2407.01449v6.pdf#p1"]
+
+- query: "how to fine-tune an LLM for free using a Kaggle GPU"
+  expected: ["pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p1"]
+
+# --- OR case: same fact, two modalities ---
+- query: "how does late-interaction document retrieval work"
+  expected: ["pdf:specs/2407.01449v6.pdf#p1", "img:docs/colqwen_qdrant_doc_agent_diagram.png"]
