@@ -27,7 +27,6 @@ mmsearch = "mmsearch.ingest.cli:main"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "httpx2>=2.0",
 ]
 # Only ingest/documents.py's diagram/scanned-page captioning path needs these.
 # The API, retrieval, and eval surfaces never import torch. For a CUDA build
