@@ -42,7 +42,7 @@ export default function App() {
             Multimodal Search
           </h1>
           <p className="text-sm text-fg-muted">
-            PDFs, diagrams, tables, and code in one index — hybrid retrieval
+            PDFs, diagrams, tables, and code in one index: hybrid retrieval
             with reciprocal rank fusion and reranking.
           </p>
         </header>

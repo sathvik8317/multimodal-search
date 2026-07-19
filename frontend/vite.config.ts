@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 // FastAPI mounts the built assets at /ui (see api/main.py), NOT at the site
 // root. Without `base`, every emitted asset path is absolute-from-root and 404s
-// in production while working fine in dev — set it and forget it.
+// in production while working fine in dev. Set it and forget it.
 const BASE = "/ui/";
 
 // Build straight into the directory FastAPI already serves. Relative to this

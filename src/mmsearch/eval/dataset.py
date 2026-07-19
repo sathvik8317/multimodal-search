@@ -7,7 +7,7 @@ Format (see PLAN.md §5.1):
     - query: "p99 latency numbers for the reranker"
       expected: ["tbl:data/latency.csv", "pdf:specs/bench.pdf#p3"]   # either is a hit (OR)
 
-``expected`` is a set of acceptable answers combined with OR — see
+``expected`` is a set of acceptable answers combined with OR. See
 mmsearch.eval.run for the hit-rate@5 scoring semantics.
 """
 

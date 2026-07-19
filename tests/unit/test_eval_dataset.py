@@ -121,7 +121,7 @@ def test_validate_labels_aggregates_multiple_errors():
 
 
 def test_validate_labels_partial_hit_in_multi_id_expected_is_valid():
-    # OR semantics belong to hit-rate scoring, not validation — as long as
+    # OR semantics belong to hit-rate scoring, not validation, as long as
     # every listed id is a real id in the index, validation passes even if
     # only one of them would ever actually be returned.
     labels = [Label(query="q1", expected=("tbl:data.csv", "pdf:bench.pdf#p3"))]

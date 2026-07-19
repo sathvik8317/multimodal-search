@@ -1,7 +1,7 @@
 # Frontend Plan
 
 Design rationale for the search UI. The backend build is documented separately
-in [`PLAN.md`](PLAN.md) — this document does not touch it.
+in [`PLAN.md`](PLAN.md). This document does not touch it.
 
 ## Context
 
@@ -10,8 +10,8 @@ LanceDB, hybrid RRF retrieval. `/search`, `/healthz`, and the `/thumbnails`
 static mount are stable contracts and are **not modified** by this work. This is
 a frontend-only upgrade.
 
-The previous frontend was a single 120-line `index.html`. It worked — it proved
-retrieval worked — but it was visually plain: no styling system, no component
+The previous frontend was a single 120-line `index.html`. It worked. It proved
+retrieval worked, but it was visually plain: no styling system, no component
 structure, no loading or error states.
 
 **Stated honestly:** that vanilla page was not technically incapable of looking
@@ -24,7 +24,7 @@ reasons; neither is a claim that vanilla could not have gotten there.
 
 ### Framework: React + Vite + TypeScript
 
-Angular's cost here is not bundle size, it is ceremony — DI, RxJS, NgModules,
+Angular's cost here is not bundle size, it is ceremony: DI, RxJS, NgModules,
 CLI codegen. That machinery is designed to amortize across dozens of screens
 maintained by a team. This application has one screen. Every Angular concept
 this UI would touch is overhead with nothing to amortize against.
@@ -46,7 +46,7 @@ Rejected alternatives:
 
 ### Serving: both dev proxy and static build
 
-Not an either/or choice — the two solve different problems.
+Not an either/or choice: the two solve different problems.
 
 **Production.** Vite builds into `src/mmsearch/api/static/`, which FastAPI
 already serves. Zero backend changes; `create_app` in
@@ -68,12 +68,12 @@ ignore rules in one file.
 
 The `.gitkeep` is load-bearing, not cosmetic: `StaticFiles(directory=...)` raises
 at app-creation time if the directory does not exist, so without a tracked file
-holding the directory open, **every** test fails on a fresh clone — not just the
+holding the directory open, **every** test fails on a fresh clone, not just the
 frontend ones. Verified by deleting the build output and running the suite: 239
 passed with only `.gitkeep` in place.
 
 `emptyOutDir: true` is required (stale hashed assets would otherwise accumulate
-forever) and it deletes everything in the directory except `.git` — including
+forever) and it deletes everything in the directory except `.git`, including
 `.gitkeep`. Vite copies `frontend/public/` into `outDir` *after* emptying, so
 `.gitkeep` lives there too and is re-emitted on every build. Verified, not
 assumed: the first implementation attempt asserted Vite spares dotfiles, and it
@@ -114,11 +114,11 @@ Note the light accent is `#15803D` (green-700), not the `#22C55E` base: white
 text on `#22C55E` measures 3.4:1, below the 4.5:1 requirement. Dark mode keeps
 `#22C55E`, paired with a near-black green foreground at 8.8:1.
 
-The accent green is reserved for interactive affordances — focus, submit, active
+The accent green is reserved for interactive affordances: focus, submit, active
 state. It is **not** used for modality badges (see below), so that "green" always
 means "you can interact with this."
 
-### Typography — split by modality
+### Typography: split by modality
 
 A single typeface for everything would be wrong here. What a result card shows
 depends on its modality, and the two categories want different faces:
@@ -129,8 +129,8 @@ depends on its modality, and the two categories want different faces:
 | Literal-text snippets | Mono (JetBrains Mono) | `table`, `code` |
 | `source_path`, `id` | Mono (JetBrains Mono) | **all** modalities |
 
-Reasoning: `pdf_page` and `diagram` snippets are running prose — a paper's text
-layer, or a VLM-generated caption. Mono at paragraph length measurably hurts
+Reasoning: `pdf_page` and `diagram` snippets are running prose, either a paper's
+text layer or a VLM-generated caption. Mono at paragraph length measurably hurts
 readability, so those get a proper sans. `table` snippets are serialized markdown
 and `code` snippets are source text; both are column- and indentation-sensitive,
 so they need mono to read correctly. Paths and ids are literal identifiers
@@ -138,7 +138,7 @@ regardless of what modality produced them, so they are always mono.
 
 This routing is a lookup keyed on `Modality`, not a chain of conditionals.
 
-### Modality badges — one color each
+### Modality badges: one color each
 
 Four modalities, four distinct hues, so a scanning eye can tell result types
 apart without reading the label:
@@ -162,11 +162,11 @@ meets 4.5:1 against its badge background in both themes.
 
 Every item is a build requirement, verified before this work is called done:
 
-- [ ] Visible focus states on all interactive elements — focus rings are never removed
+- [ ] Visible focus states on all interactive elements: focus rings are never removed
 - [ ] `prefers-reduced-motion` respected on every transition
 - [ ] Text contrast ≥ 4.5:1 in **both** light and dark
 - [ ] Responsive at 375px, 768px, 1024px, 1440px
-- [ ] SVG icons (inline, Lucide-derived paths) — never emoji as icons
+- [ ] SVG icons (inline, Lucide-derived paths): never emoji as icons
 - [ ] Hover transitions 150–300ms
 
 ---
@@ -194,7 +194,7 @@ frontend/                    # npm lives here, outside the Python package
       ModalityBadge.tsx
 
 src/mmsearch/api/static/     # Vite build target
-  .gitkeep                   # tracked — holds the directory open
+  .gitkeep                   # tracked: holds the directory open
 ```
 
 No `tailwind.config.js` and no PostCSS config: Tailwind v4 is CSS-first, so
@@ -221,11 +221,11 @@ literals `"pdf_page" | "diagram" | "table" | "code"`.
 
 ### Thumbnail URLs must be percent-encoded
 
-`make_id()` in `schema.py` builds pdf_page refs containing `#` — e.g.
+`make_id()` in `schema.py` builds pdf_page refs containing `#`, e.g.
 `specs/paper.pdf#p5.png`, and the thumbnail files on disk are named that way
 too. Interpolated raw into a URL, `#` starts a fragment: the browser requests
 `/thumbnails/specs/paper.pdf` and silently drops `#p5.png`. Confirmed at the
-HTTP level — unencoded 404s, `%23`-encoded returns 200.
+HTTP level: unencoded 404s, `%23`-encoded returns 200.
 
 **This bug predates the rewrite.** The previous vanilla `index.html` built
 `img.src` by raw interpolation, so every PDF-page thumbnail was broken there
@@ -235,7 +235,7 @@ Anything else that builds a thumbnail URL must do the same.
 
 ## Scope
 
-**In:** one search page — query box, result cards with thumbnails, modality
+**In:** one search page: query box, result cards with thumbnails, modality
 badges, score display, loading skeleton, empty state, error state, responsive
 layout.
 
@@ -247,26 +247,26 @@ layout.
 `test_ui_returns_html_with_search_input_and_fetch_call` in
 `tests/unit/test_api_main.py` asserted that the `/ui` body contained `<input`,
 `/search`, and `fetch(`. A Vite build emits a bundled `/assets/index-<hash>.js`,
-so `fetch(` never appears in `index.html` — this test fails regardless of the
+so `fetch(` never appears in `index.html`. This test fails regardless of the
 build-artifact decision. It was asserting on a hand-written artifact that stops
 existing the moment `/ui` serves a bundle.
 
 **Removed.** There is nothing project-specific left to assert about one line of
-framework mount configuration. The `/thumbnails` mount test remains — that one
+framework mount configuration. The `/thumbnails` mount test remains: that one
 serves real application data.
 
 Suite: 240 → 239.
 
 ## Verification
 
-1. `cd frontend && npm install && npm run build` — output lands in
+1. `cd frontend && npm install && npm run build`: output lands in
    `src/mmsearch/api/static/`, and the built `index.html` references
    `/ui/assets/...` (not `/assets/...`).
 2. `uvicorn mmsearch.api.server:app` → `http://127.0.0.1:8000/ui` loads CSS and
    JS with no 404s.
 3. A real query renders thumbnails, correct badge hues, and scores; prose
    snippets render sans, table/code snippets render mono.
-4. `npm run dev` on `:5173` with the backend on `:8000` — proxy returns results,
+4. `npm run dev` on `:5173` with the backend on `:8000`: proxy returns results,
    HMR works.
 5. All four states exercised: loading, results, empty (nonsense query), error
    (backend stopped mid-query).

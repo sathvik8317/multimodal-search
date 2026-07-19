@@ -35,8 +35,8 @@ export function ResultsList({ status, results, error }: ResultsListProps) {
   if (status === "idle") {
     return (
       <Notice>
-        Try <em>“how does reciprocal rank fusion work”</em> — one query, four
-        modalities.
+        Try <em>“how does reciprocal rank fusion work”</em> and watch one query
+        hit four modalities.
       </Notice>
     );
   }

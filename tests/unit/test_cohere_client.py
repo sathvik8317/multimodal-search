@@ -1,6 +1,6 @@
 """Tests for the real Cohere client wrapper.
 
-The underlying SDK object is always injected as a fake — these tests never
+The underlying SDK object is always injected as a fake. These tests never
 construct a real cohere.ClientV2 and never touch the network.
 """
 

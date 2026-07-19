@@ -2,7 +2,7 @@
 
 Scoring semantics (definition of record):
 
-    A query's ``expected`` ids are an OR-set of acceptable answers — a hit
+    A query's ``expected`` ids are an OR-set of acceptable answers: a hit
     if ANY of them appears in the top-k returned ids. Each query contributes
     exactly 0 or 1 to the aggregate hit rate (never fractional, never AND).
 
