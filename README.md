@@ -96,6 +96,18 @@ and code search are comparatively robust to phrasing; diagram retrieval
 (image-embedding-to-text-query similarity) is the one path where how you
 ask matters more than what you're asking about.
 
+**Reranking can demote a correct top-ranked PDF page.** For the query
+`"how to fine-tune an LLM for free using a Kaggle GPU"`, both `vector-only`
+and `rrf-only` correctly rank the paper's actual intro page (`p1`) at rank
+1 — `rrf+rerank` drops it out of the top 5 entirely, in favor of denser
+mid-document pages that share more surface vocabulary with the query. This
+is the one case on this eval set where reranking looks like a genuine
+regression, not a small-sample fluke: the correct page and the promoted
+pages are all topically relevant, but the reranker's judgment of "most
+relevant" doesn't match the eval label's ground truth for a tutorial-style
+document where the intro page is mostly setup rather than dense keyword
+content.
+
 ## Tests
 
 240 tests, all green, all run against fakes/fixtures — no real API calls,
