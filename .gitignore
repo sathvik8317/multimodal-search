@@ -13,3 +13,9 @@ htmlcov/
 
 # live session working log -- local paths/session IDs, not a project artifact
 HANDOFF.md
+
+# corpus/ -- specific files excluded by license or size, not a blanket exclusion.
+# See corpus/README.md for what's excluded, why, and where to source it.
+corpus/specs/2106.09685v2.pdf
+corpus/specs/NIPS-2017-attention-is-all-you-need-Paper.pdf
+corpus/data/Bank_Marketing_Dataset.csv
