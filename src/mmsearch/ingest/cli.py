@@ -73,13 +73,6 @@ def _run_ingest_command(
 
 
 def main(argv: list[str] | None = None) -> int:
-    from dotenv import load_dotenv
-
-    # Explicitly cwd-relative (not python-dotenv's default upward search from
-    # this module's own file location) so `.env` is found relative to wherever
-    # the command is invoked from, not relative to the installed package.
-    load_dotenv(dotenv_path=Path(".env"))
-
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 

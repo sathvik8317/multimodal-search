@@ -39,10 +39,26 @@ That emits into `src/mmsearch/api/static/`, which FastAPI already serves: no
 separate frontend server in production. Design rationale and the dev-server
 workflow are in [`FRONTEND_PLAN.md`](FRONTEND_PLAN.md).
 
-Create `.env` at the repo root:
+Create `.env` at the repo root (see [`.env.example`](.env.example)):
 
 ```
 COHERE_API_KEY=your-key-here
+MMSEARCH_API_KEY=your-own-shared-secret-here
+```
+
+`MMSEARCH_API_KEY` gates `/search` and `/thumbnails` -- generate one with:
+
+```
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+The server won't start without it. Opening `/ui` in a browser prompts for the
+key on first search and remembers it (`localStorage` + a cookie, so both
+`fetch` calls and `<img>`-loaded thumbnails authenticate); calling `/search`
+directly needs an `X-API-Key: <key>` header, e.g.:
+
+```
+curl -H "X-API-Key: your-own-shared-secret-here" "http://127.0.0.1:8000/search?q=auth"
 ```
 
 Populate `corpus/` with your own PDFs (`specs/`), diagrams (`docs/`),

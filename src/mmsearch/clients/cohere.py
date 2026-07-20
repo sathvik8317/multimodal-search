@@ -7,7 +7,6 @@ real ``cohere.ClientV2`` from ``COHERE_API_KEY``.
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
@@ -18,6 +17,7 @@ from cohere.types import EmbedInput as SDKEmbedInput
 
 from mmsearch import config
 from mmsearch.clients.protocols import EmbedInput, RerankResult
+from mmsearch.settings import Settings
 
 _EMBED_BATCH_SIZE = 96
 _DEFAULT_MAX_RETRIES = 3
@@ -33,7 +33,10 @@ _TRANSIENT_ERRORS = (
 
 
 def _build_default_sdk(api_key: str | None) -> cohere.ClientV2:
-    key = api_key or os.environ.get("COHERE_API_KEY")
+    # Settings(), not get_settings(): a bare Settings() never enforces the
+    # unrelated /search gate-key policy (see settings.py), and reads .env the
+    # same cwd-relative way load_dotenv() used to.
+    key = api_key or Settings().cohere_api_key
     if not key:
         raise RuntimeError(
             "COHERE_API_KEY not set and no api_key/sdk provided to CohereClient"

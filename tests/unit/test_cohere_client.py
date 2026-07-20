@@ -81,7 +81,11 @@ def test_cohere_client_conforms_to_embedding_client_and_reranker():
     assert isinstance(client, Reranker)
 
 
-def test_construction_without_sdk_or_api_key_raises_clear_error(monkeypatch):
+def test_construction_without_sdk_or_api_key_raises_clear_error(monkeypatch, tmp_path):
+    # chdir away from the repo root: Settings() reads .env directly (independent
+    # of os.environ), so a real COHERE_API_KEY in the repo's own .env would
+    # otherwise leak through despite delenv below.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("COHERE_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="COHERE_API_KEY"):
         CohereClient()
