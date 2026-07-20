@@ -1,11 +1,34 @@
 # Multimodal Search for Engineers
 
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Tests](https://img.shields.io/badge/tests-276%20passing-brightgreen)
+
 A search system that unifies PDFs, diagrams, tables, and code into **one
 searchable index**: one embedding space (Cohere Embed v4), one LanceDB
 table, hybrid retrieval (vector + full-text, fused via RRF) with Cohere
 Rerank v3 on top. Built to answer a question a single-modality search tool
 can't: "which of my papers, diagrams, spreadsheets, and source files
 actually talks about this," in one query.
+
+## Screenshots
+
+The idle search page:
+
+![Idle search page](docs/screenshots/01-idle-search.png)
+
+A PDF result for "what is low-rank adaptation of large language models":
+
+![PDF page result for a LoRA query](docs/screenshots/02-pdf-result.png)
+
+A diagram result with its thumbnail, for "diagram showing the transformer
+encoder decoder architecture":
+
+![Diagram result with thumbnail for a transformer architecture query](docs/screenshots/03-diagram-result.png)
+
+A code result with the mono snippet, for "infer implementation flow from
+session text":
+
+![Code result with a monospace snippet](docs/screenshots/04-code-result.png)
 
 ## Architecture at a glance
 
@@ -146,7 +169,7 @@ content.
 
 ## Tests
 
-239 tests, all green, all run against fakes/fixtures. No real API calls,
+276 tests, all green, all run against fakes/fixtures. No real API calls,
 no torch/GPU load except when actually exercising the local captioner:
 
 ```
