@@ -76,7 +76,8 @@ def _positional_results(ids: list[str], id_to_row: dict[str, dict]) -> list[Sear
 
 def build_search_fn(
     table,
-    embedding_client: EmbeddingClient,
+    cohere_embedder: EmbeddingClient,
+    openai_embedder: EmbeddingClient,
     reranker: Reranker | None,
     *,
     mode: str = "rrf+rerank",
@@ -84,26 +85,45 @@ def build_search_fn(
     rerank_m: int = config.RERANK_M,
     rrf_k: int = config.RRF_K,
 ) -> SearchFn:
+    """Two vector retrievers (Cohere image-space, OpenAI text-space) + FTS,
+    fused by three-way RRF, optionally reranked. See
+    EMBEDDING_MIGRATION_PLAN.md: a query vector from one provider is only ever
+    compared against that same provider's column -- never mixed.
+    """
     if mode not in _VALID_MODES:
         raise ValueError(f"unknown mode: {mode!r}; expected one of {_VALID_MODES}")
 
     def search(query: str, k: int = config.TOP_K) -> list[SearchResult]:
-        query_vector = embedding_client.embed_query(query)
-        vector_hits = table.search(query_vector, query_type="vector").limit(fetch_n).to_list()
+        # ponytail: sequential query embeds (2 network calls); wrap in
+        # ThreadPool(2) if search latency matters.
+        cohere_query_vector = cohere_embedder.embed_query(query)
+        openai_query_vector = openai_embedder.embed_query(query)
+        cohere_hits = (
+            table.search(cohere_query_vector, query_type="vector", vector_column_name="vector_cohere")
+            .limit(fetch_n)
+            .to_list()
+        )
+        openai_hits = (
+            table.search(openai_query_vector, query_type="vector", vector_column_name="vector_openai")
+            .limit(fetch_n)
+            .to_list()
+        )
+
+        id_to_row = {row["id"]: row for row in cohere_hits}
+        id_to_row.update({row["id"]: row for row in openai_hits})
+
+        cohere_ids = [row["id"] for row in cohere_hits]
+        openai_ids = [row["id"] for row in openai_hits]
 
         if mode == "vector-only":
-            id_to_row = {row["id"]: row for row in vector_hits}
-            vector_ids = [row["id"] for row in vector_hits][:k]
-            return _positional_results(vector_ids, id_to_row)
+            fused_ids = reciprocal_rank_fusion([cohere_ids, openai_ids], k=rrf_k)
+            return _positional_results(fused_ids[:k], id_to_row)
 
         fts_hits = table.search(query, query_type="fts").limit(fetch_n).to_list()
-
-        id_to_row = {row["id"]: row for row in vector_hits}
         id_to_row.update({row["id"]: row for row in fts_hits})
-
-        vector_ids = [row["id"] for row in vector_hits]
         fts_ids = [row["id"] for row in fts_hits]
-        fused_ids = reciprocal_rank_fusion([vector_ids, fts_ids], k=rrf_k)
+
+        fused_ids = reciprocal_rank_fusion([cohere_ids, openai_ids, fts_ids], k=rrf_k)
 
         if mode == "rrf-only":
             return _positional_results(fused_ids[:k], id_to_row)

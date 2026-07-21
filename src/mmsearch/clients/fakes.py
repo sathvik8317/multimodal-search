@@ -13,23 +13,32 @@ from mmsearch import config
 from mmsearch.clients.protocols import EmbedInput, RerankResult
 
 
-def _deterministic_vector(seed_bytes: bytes) -> list[float]:
+def _deterministic_vector(seed_bytes: bytes, dim: int) -> list[float]:
     digest = hashlib.sha256(seed_bytes).digest()
     rng = random.Random(int.from_bytes(digest[:8], "big"))
-    vector = [rng.uniform(-1.0, 1.0) for _ in range(config.EMBED_DIM)]
+    vector = [rng.uniform(-1.0, 1.0) for _ in range(dim)]
     norm = sum(x * x for x in vector) ** 0.5 or 1.0
     return [x / norm for x in vector]
 
 
 class FakeEmbeddingClient:
+    """Deterministic fake, provider-agnostic. Pass dim=config.COHERE_EMBED_DIM
+    or dim=config.OPENAI_EMBED_DIM to stand in for either real client (both
+    happen to be 1536 today, hence the shared default)."""
+
+    def __init__(self, dim: int = config.COHERE_EMBED_DIM) -> None:
+        self._dim = dim
+
     def embed_documents(self, items: list[EmbedInput]) -> list[list[float]]:
         return [
-            _deterministic_vector(item.text.encode() if item.text is not None else item.image_bytes)
+            _deterministic_vector(
+                item.text.encode() if item.text is not None else item.image_bytes, self._dim
+            )
             for item in items
         ]
 
     def embed_query(self, text: str) -> list[float]:
-        return _deterministic_vector(text.encode())
+        return _deterministic_vector(text.encode(), self._dim)
 
 
 class FakeReranker:

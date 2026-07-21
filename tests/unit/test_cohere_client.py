@@ -95,7 +95,7 @@ def test_construction_without_sdk_or_api_key_raises_clear_error(monkeypatch, tmp
 
 def test_embed_documents_maps_text_input_to_text_embed_content():
     sdk = FakeSDK()
-    sdk.queue_embed(_embed_response([[0.1] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.1] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk)
 
     client.embed_documents([EmbedInput(text="def f(): pass")])
@@ -108,7 +108,7 @@ def test_embed_documents_maps_text_input_to_text_embed_content():
 
 def test_embed_documents_maps_image_input_to_base64_data_uri():
     sdk = FakeSDK()
-    sdk.queue_embed(_embed_response([[0.1] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.1] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk)
 
     image_bytes = b"\x89PNG raw bytes"
@@ -123,7 +123,7 @@ def test_embed_documents_maps_image_input_to_base64_data_uri():
 
 def test_embed_documents_uses_search_document_input_type():
     sdk = FakeSDK()
-    sdk.queue_embed(_embed_response([[0.1] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.1] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk)
 
     client.embed_documents([EmbedInput(text="hello")])
@@ -133,8 +133,8 @@ def test_embed_documents_uses_search_document_input_type():
 
 def test_embed_documents_batches_across_multiple_calls():
     sdk = FakeSDK()
-    sdk.queue_embed(_embed_response([[0.1] * config.EMBED_DIM, [0.2] * config.EMBED_DIM]))
-    sdk.queue_embed(_embed_response([[0.3] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.1] * config.COHERE_EMBED_DIM, [0.2] * config.COHERE_EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.3] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk, embed_batch_size=2)
 
     items = [EmbedInput(text=t) for t in ("a", "b", "c")]
@@ -143,7 +143,7 @@ def test_embed_documents_batches_across_multiple_calls():
     assert len(sdk.embed_calls) == 2
     assert len(sdk.embed_calls[0]["inputs"]) == 2
     assert len(sdk.embed_calls[1]["inputs"]) == 1
-    assert vectors == [[0.1] * config.EMBED_DIM, [0.2] * config.EMBED_DIM, [0.3] * config.EMBED_DIM]
+    assert vectors == [[0.1] * config.COHERE_EMBED_DIM, [0.2] * config.COHERE_EMBED_DIM, [0.3] * config.COHERE_EMBED_DIM]
 
 
 def test_embed_documents_empty_list_makes_no_calls():
@@ -157,13 +157,13 @@ def test_embed_documents_empty_list_makes_no_calls():
 
 def test_embed_query_uses_search_query_input_type_and_returns_single_vector():
     sdk = FakeSDK()
-    sdk.queue_embed(_embed_response([[0.5] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.5] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk)
 
     vector = client.embed_query("what's the retry backoff")
 
     assert sdk.embed_calls[0]["input_type"] == "search_query"
-    assert vector == [0.5] * config.EMBED_DIM
+    assert vector == [0.5] * config.COHERE_EMBED_DIM
 
 
 # --- rerank -----------------------------------------------------------------------------
@@ -189,12 +189,12 @@ def test_transient_error_is_retried_then_succeeds(sleeps):
     sdk = FakeSDK()
     sdk.queue_embed(cohere.TooManyRequestsError(body="rate limited"))
     sdk.queue_embed(cohere.ServiceUnavailableError(body="unavailable"))
-    sdk.queue_embed(_embed_response([[0.1] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.1] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk, max_retries=3, sleep=fake_sleep)
 
     vector = client.embed_query("hello")
 
-    assert vector == [0.1] * config.EMBED_DIM
+    assert vector == [0.1] * config.COHERE_EMBED_DIM
     assert len(sdk.embed_calls) == 3
     assert len(calls) == 2  # slept before the 2nd and 3rd attempts
 
@@ -204,7 +204,7 @@ def test_retry_backoff_is_exponential(sleeps):
     sdk = FakeSDK()
     sdk.queue_embed(cohere.TooManyRequestsError(body="rate limited"))
     sdk.queue_embed(cohere.TooManyRequestsError(body="rate limited"))
-    sdk.queue_embed(_embed_response([[0.1] * config.EMBED_DIM]))
+    sdk.queue_embed(_embed_response([[0.1] * config.COHERE_EMBED_DIM]))
     client = CohereClient(sdk=sdk, max_retries=3, backoff_seconds=1.0, sleep=fake_sleep)
 
     client.embed_query("hello")

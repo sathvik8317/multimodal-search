@@ -32,20 +32,42 @@ def test_cohere_api_key_defaults_to_none_when_unset(monkeypatch):
     assert settings.cohere_api_key is None
 
 
+def test_reads_openai_api_key_from_unprefixed_env_var(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.openai_api_key == "openai-secret"
+
+
+def test_openai_api_key_defaults_to_none_when_unset(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.openai_api_key is None
+
+
 # --- .env file ----------------------------------------------------------------------------
 
 def test_dotenv_file_is_honored_cwd_relative(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("MMSEARCH_API_KEY", raising=False)
     monkeypatch.delenv("COHERE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     (tmp_path / ".env").write_text(
-        "MMSEARCH_API_KEY=from-dotenv\nCOHERE_API_KEY=cohere-from-dotenv\n"
+        "MMSEARCH_API_KEY=from-dotenv\n"
+        "COHERE_API_KEY=cohere-from-dotenv\n"
+        "OPENAI_API_KEY=openai-from-dotenv\n"
     )
 
     settings = Settings()
 
     assert settings.api_key == "from-dotenv"
     assert settings.cohere_api_key == "cohere-from-dotenv"
+    assert settings.openai_api_key == "openai-from-dotenv"
 
 
 def test_real_env_var_overrides_dotenv_file(tmp_path, monkeypatch):

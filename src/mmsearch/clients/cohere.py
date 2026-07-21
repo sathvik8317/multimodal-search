@@ -86,7 +86,7 @@ class CohereClient:
         for batch in _chunk(items, self._embed_batch_size):
             response = self._call_with_retry(
                 lambda batch=batch: self._sdk.embed(
-                    model=config.EMBED_MODEL,
+                    model=config.COHERE_EMBED_MODEL,
                     input_type="search_document",
                     inputs=[_to_sdk_embed_input(item) for item in batch],
                     embedding_types=["float"],
@@ -98,7 +98,7 @@ class CohereClient:
     def embed_query(self, text: str) -> list[float]:
         response = self._call_with_retry(
             lambda: self._sdk.embed(
-                model=config.EMBED_MODEL,
+                model=config.COHERE_EMBED_MODEL,
                 input_type="search_query",
                 inputs=[_to_sdk_embed_input(EmbedInput(text=text))],
                 embedding_types=["float"],

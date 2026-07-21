@@ -35,7 +35,8 @@ def test_ingest_table_content_text_contains_headers_and_looks_like_markdown():
 def test_ingest_table_vector_has_correct_dimension():
     csv_path = CORPUS_DIR / "data" / "latency.csv"
     row = ingest_table(csv_path, CORPUS_DIR, FakeEmbeddingClient())
-    assert len(row.vector) == config.EMBED_DIM
+    assert row.vector_cohere is None
+    assert len(row.vector_openai) == config.OPENAI_EMBED_DIM
 
 
 def test_ingest_table_thumbnail_ref_is_empty():
@@ -114,4 +115,4 @@ def test_ingest_table_is_deterministic():
     row2 = ingest_table(csv_path, CORPUS_DIR, FakeEmbeddingClient())
     assert row1.id == row2.id
     assert row1.content_text == row2.content_text
-    assert row1.vector == row2.vector
+    assert row1.vector_openai == row2.vector_openai

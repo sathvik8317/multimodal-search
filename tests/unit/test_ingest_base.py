@@ -6,7 +6,10 @@ from PIL import Image
 
 from mmsearch import db
 from mmsearch.clients.fakes import FakeCaptioner, FakeEmbeddingClient
+from mmsearch.clients.protocols import Embedders
 from mmsearch.ingest.base import IngestStats, classify_file, ingest_corpus, walk_corpus
+
+EMBEDDERS = Embedders(image=FakeEmbeddingClient(), text=FakeEmbeddingClient())
 
 
 # --- classify_file (dispatch logic) ------------------------------------------------------
@@ -110,7 +113,7 @@ def test_ingest_corpus_writes_rows_for_every_supported_modality(tmp_path):
 
     stats = ingest_corpus(
         corpus_root,
-        embedding_client=FakeEmbeddingClient(),
+        embedders=EMBEDDERS,
         captioner=FakeCaptioner(),
         table=table,
         thumbnails_dir=tmp_path / "thumbnails",
@@ -129,7 +132,7 @@ def test_ingest_corpus_records_unsupported_files_as_skipped(tmp_path):
 
     stats = ingest_corpus(
         corpus_root,
-        embedding_client=FakeEmbeddingClient(),
+        embedders=EMBEDDERS,
         captioner=FakeCaptioner(),
         table=table,
         thumbnails_dir=tmp_path / "thumbnails",
@@ -146,10 +149,10 @@ def test_ingest_corpus_is_idempotent_on_rerun(tmp_path):
     table = db.open_table(uri=tmp_path / "lancedb")
 
     ingest_corpus(
-        corpus_root, FakeEmbeddingClient(), FakeCaptioner(), table, thumbnails_dir=tmp_path / "thumbnails"
+        corpus_root, EMBEDDERS, FakeCaptioner(), table, thumbnails_dir=tmp_path / "thumbnails"
     )
     ingest_corpus(
-        corpus_root, FakeEmbeddingClient(), FakeCaptioner(), table, thumbnails_dir=tmp_path / "thumbnails"
+        corpus_root, EMBEDDERS, FakeCaptioner(), table, thumbnails_dir=tmp_path / "thumbnails"
     )
 
     assert table.count_rows() == 4  # upsert dedups by id, no duplicates
@@ -164,7 +167,7 @@ def test_ingest_corpus_continues_after_a_malformed_file(tmp_path):
 
     stats = ingest_corpus(
         corpus_root,
-        embedding_client=FakeEmbeddingClient(),
+        embedders=EMBEDDERS,
         captioner=FakeCaptioner(),
         table=table,
         thumbnails_dir=tmp_path / "thumbnails",
@@ -184,7 +187,7 @@ def test_ingest_stats_tracks_text_source_breakdown(tmp_path):
 
     stats = ingest_corpus(
         corpus_root,
-        embedding_client=FakeEmbeddingClient(),
+        embedders=EMBEDDERS,
         captioner=FakeCaptioner(),
         table=table,
         thumbnails_dir=tmp_path / "thumbnails",

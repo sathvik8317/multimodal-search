@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # CohereClient raises a clear RuntimeError lazily, only when it actually
     # needs the key (see clients/cohere.py).
     cohere_api_key: str | None = Field(default=None, validation_alias="COHERE_API_KEY")
+    # Same convention as cohere_api_key above; OpenAIClient raises lazily too.
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     # The shared secret that gates /search and /thumbnails. Enforced by
     # get_settings(), not here -- see module docstring.
     api_key: str | None = None

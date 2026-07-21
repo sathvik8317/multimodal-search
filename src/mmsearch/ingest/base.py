@@ -16,7 +16,7 @@ from pathlib import Path
 from lancedb.table import Table
 
 from mmsearch import config, db
-from mmsearch.clients.protocols import Captioner, EmbeddingClient
+from mmsearch.clients.protocols import Captioner, Embedders
 from mmsearch.ingest.code import ingest_code_file
 from mmsearch.ingest.documents import ingest_diagram, ingest_pdf
 from mmsearch.ingest.tables import ingest_table
@@ -67,7 +67,7 @@ class IngestStats:
 
 def ingest_corpus(
     root: Path,
-    embedding_client: EmbeddingClient,
+    embedders: Embedders,
     captioner: Captioner,
     table: Table,
     thumbnails_dir: Path = config.THUMBNAILS_DIR,
@@ -88,7 +88,7 @@ def ingest_corpus(
             continue
 
         try:
-            rows = _ingest_one(category, path, root, embedding_client, captioner, thumbnails_dir)
+            rows = _ingest_one(category, path, root, embedders, captioner, thumbnails_dir)
         except Exception as exc:  # noqa: BLE001 -- one bad file must not abort the whole corpus
             stats.skipped.append((relpath, f"{type(exc).__name__}: {exc}"))
             continue
@@ -103,16 +103,16 @@ def _ingest_one(
     category: str,
     path: Path,
     root: Path,
-    embedding_client: EmbeddingClient,
+    embedders: Embedders,
     captioner: Captioner,
     thumbnails_dir: Path,
 ) -> list[Row]:
     if category == "pdf":
-        return ingest_pdf(path, root, embedding_client, captioner, thumbnails_dir=thumbnails_dir)
+        return ingest_pdf(path, root, embedders, captioner, thumbnails_dir=thumbnails_dir)
     if category == "diagram":
-        return [ingest_diagram(path, root, embedding_client, captioner, thumbnails_dir=thumbnails_dir)]
+        return [ingest_diagram(path, root, embedders, captioner, thumbnails_dir=thumbnails_dir)]
     if category == "table":
-        return [ingest_table(path, root, embedding_client)]
+        return [ingest_table(path, root, embedders.text)]
     if category == "code":
-        return ingest_code_file(path, root, embedding_client)
+        return ingest_code_file(path, root, embedders.text)
     raise ValueError(f"unknown category: {category!r}")

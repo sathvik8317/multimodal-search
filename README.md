@@ -1,14 +1,15 @@
 # Multimodal Search for Engineers
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-276%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-296%20passing-brightgreen)
 
 A search system that unifies PDFs, diagrams, tables, and code into **one
-searchable index**: one embedding space (Cohere Embed v4), one LanceDB
-table, hybrid retrieval (vector + full-text, fused via RRF) with Cohere
-Rerank v3 on top. Built to answer a question a single-modality search tool
-can't: "which of my papers, diagrams, spreadsheets, and source files
-actually talks about this," in one query.
+searchable index**: two embedding spaces (Cohere Embed v4 for page/diagram
+*images*, OpenAI text-embedding-3-small for table/code/caption *text*), one
+LanceDB table, hybrid retrieval (two vector retrievers + full-text, fused via
+RRF) with Cohere Rerank v3 on top. Built to answer a question a
+single-modality search tool can't: "which of my papers, diagrams,
+spreadsheets, and source files actually talks about this," in one query.
 
 ## Screenshots
 
@@ -34,15 +35,19 @@ session text":
 
 ![retrieval pipeline](corpus/docs/retrieval_pipeline_diagram.png)
 
-Query → embed (Cohere Embed v4) → vector search + full-text search (both
-against the same LanceDB table) → Reciprocal Rank Fusion → Cohere Rerank
-v3 → top-k results with thumbnails. PDFs and diagrams are embedded as
-*images* (ColPali-style, single-vector) rather than OCR'd text; tables are
-serialized to markdown and capped at 200 rows; code is chunked by
-tree-sitter symbol boundaries (function/class), not fixed-size splits.
+Query → embed with both providers (Cohere text query-embed, OpenAI text
+query-embed) → two vector searches + full-text search (all three against the
+same LanceDB table) → three-way Reciprocal Rank Fusion → Cohere Rerank v3 →
+top-k results with thumbnails. PDFs and diagrams are embedded as *images*
+(ColPali-style, single-vector, Cohere Embed v4) rather than OCR'd text;
+diagrams and scanned pages also get a second OpenAI vector over their
+VLM caption text. Tables are serialized to markdown and capped at 200 rows;
+code is chunked by tree-sitter symbol boundaries (function/class), not
+fixed-size splits -- both embedded via OpenAI text-embedding-3-small.
 Text-less images (diagrams, scanned pages) get a moondream2-generated
-caption so full-text search and reranking still have real text to work
-with. Full design rationale is in [`PLAN.md`](PLAN.md).
+caption so full-text search, the OpenAI vector, and reranking all have real
+text to work with. Full design rationale is in [`PLAN.md`](PLAN.md) and
+[`EMBEDDING_MIGRATION_PLAN.md`](EMBEDDING_MIGRATION_PLAN.md).
 
 ## Setup
 
@@ -66,6 +71,7 @@ Create `.env` at the repo root (see [`.env.example`](.env.example)):
 
 ```
 COHERE_API_KEY=your-key-here
+OPENAI_API_KEY=your-key-here
 MMSEARCH_API_KEY=your-own-shared-secret-here
 ```
 
@@ -107,6 +113,12 @@ cd frontend && npm run dev      # http://127.0.0.1:5173
 ```
 
 ## Eval results
+
+> **Pending re-measurement.** The table and "Known limitations" narrative
+> below were measured against the old single-embedding-space (Cohere-only)
+> index. The Cohere/OpenAI split changes the vector retrieval signal, so
+> these numbers are stale until the corpus is re-ingested and re-evaluated
+> (see [`EMBEDDING_MIGRATION_PLAN.md`](EMBEDDING_MIGRATION_PLAN.md) §8).
 
 Hit-rate@5 against 25 hand-written labels
 ([`eval/labels.yaml`](src/mmsearch/eval/labels.yaml)) on the real ingested
@@ -169,7 +181,7 @@ content.
 
 ## Tests
 
-276 tests, all green, all run against fakes/fixtures. No real API calls,
+296 tests, all green, all run against fakes/fixtures. No real API calls,
 no torch/GPU load except when actually exercising the local captioner:
 
 ```

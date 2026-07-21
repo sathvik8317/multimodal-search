@@ -13,13 +13,19 @@ def test_fake_embed_documents_returns_correct_dim():
     client = FakeEmbeddingClient()
     vectors = client.embed_documents([EmbedInput(text="hello world")])
     assert len(vectors) == 1
-    assert len(vectors[0]) == config.EMBED_DIM
+    assert len(vectors[0]) == config.COHERE_EMBED_DIM
 
 
 def test_fake_embed_documents_handles_image_input():
     client = FakeEmbeddingClient()
     vectors = client.embed_documents([EmbedInput(image_bytes=b"\x89PNG fake bytes")])
-    assert len(vectors[0]) == config.EMBED_DIM
+    assert len(vectors[0]) == config.COHERE_EMBED_DIM
+
+
+def test_fake_embed_documents_respects_custom_dim():
+    client = FakeEmbeddingClient(dim=config.OPENAI_EMBED_DIM)
+    vectors = client.embed_documents([EmbedInput(text="hello world")])
+    assert len(vectors[0]) == config.OPENAI_EMBED_DIM
 
 
 def test_fake_embed_documents_is_deterministic():
@@ -40,7 +46,7 @@ def test_fake_embed_query_returns_correct_dim_and_is_deterministic():
     client = FakeEmbeddingClient()
     q1 = client.embed_query("what's the retry backoff")
     q2 = client.embed_query("what's the retry backoff")
-    assert len(q1) == config.EMBED_DIM
+    assert len(q1) == config.COHERE_EMBED_DIM
     assert q1 == q2
 
 

@@ -75,21 +75,44 @@ def test_row_defaults():
         modality=Modality.TABLE,
         content_text="| a | b |\n|---|---|\n| 1 | 2 |",
         text_source=TextSource.TABLE_MARKDOWN,
-        vector=[0.0] * config.EMBED_DIM,
+        vector_openai=[0.0] * config.OPENAI_EMBED_DIM,
         source_path="data/latency.csv",
     )
     assert row.thumbnail_ref == ""
     assert row.metadata == "{}"
 
 
-def test_row_vector_must_match_embed_dim():
-    with pytest.raises(ValueError, match="EMBED_DIM"):
+def test_row_requires_at_least_one_vector():
+    with pytest.raises(ValueError, match="at least one"):
         Row(
             id="tbl:data/latency.csv",
             modality=Modality.TABLE,
             content_text="text",
             text_source=TextSource.TABLE_MARKDOWN,
-            vector=[0.0, 0.0],  # wrong length
+            source_path="data/latency.csv",
+        )
+
+
+def test_row_vector_cohere_must_match_embed_dim():
+    with pytest.raises(ValueError, match="COHERE_EMBED_DIM"):
+        Row(
+            id="tbl:data/latency.csv",
+            modality=Modality.TABLE,
+            content_text="text",
+            text_source=TextSource.TABLE_MARKDOWN,
+            vector_cohere=[0.0, 0.0],  # wrong length
+            source_path="data/latency.csv",
+        )
+
+
+def test_row_vector_openai_must_match_embed_dim():
+    with pytest.raises(ValueError, match="OPENAI_EMBED_DIM"):
+        Row(
+            id="tbl:data/latency.csv",
+            modality=Modality.TABLE,
+            content_text="text",
+            text_source=TextSource.TABLE_MARKDOWN,
+            vector_openai=[0.0, 0.0],  # wrong length
             source_path="data/latency.csv",
         )
 
@@ -101,7 +124,7 @@ def test_row_content_text_must_not_be_empty():
             modality=Modality.TABLE,
             content_text="",
             text_source=TextSource.TABLE_MARKDOWN,
-            vector=[0.0] * config.EMBED_DIM,
+            vector_openai=[0.0] * config.OPENAI_EMBED_DIM,
             source_path="data/latency.csv",
         )
 
@@ -114,17 +137,25 @@ def test_arrow_schema_field_names():
         "modality",
         "content_text",
         "text_source",
-        "vector",
+        "vector_cohere",
+        "vector_openai",
         "source_path",
         "thumbnail_ref",
         "metadata",
     ]
 
 
-def test_arrow_schema_vector_is_fixed_size_list_float32():
-    vector_field = ARROW_SCHEMA.field("vector")
+def test_arrow_schema_vector_cohere_is_fixed_size_list_float32():
+    vector_field = ARROW_SCHEMA.field("vector_cohere")
     assert pa.types.is_fixed_size_list(vector_field.type)
-    assert vector_field.type.list_size == config.EMBED_DIM
+    assert vector_field.type.list_size == config.COHERE_EMBED_DIM
+    assert vector_field.type.value_type == pa.float32()
+
+
+def test_arrow_schema_vector_openai_is_fixed_size_list_float32():
+    vector_field = ARROW_SCHEMA.field("vector_openai")
+    assert pa.types.is_fixed_size_list(vector_field.type)
+    assert vector_field.type.list_size == config.OPENAI_EMBED_DIM
     assert vector_field.type.value_type == pa.float32()
 
 
@@ -141,7 +172,7 @@ def test_rows_to_table_roundtrips_single_row():
         modality=Modality.CODE,
         content_text="def f(): pass",
         text_source=TextSource.CODE_SOURCE,
-        vector=[0.5] * config.EMBED_DIM,
+        vector_openai=[0.5] * config.OPENAI_EMBED_DIM,
         source_path="src/a.py",
         metadata='{"lang": "python"}',
     )
@@ -151,6 +182,7 @@ def test_rows_to_table_roundtrips_single_row():
     assert table.column("id").to_pylist() == ["code:src/a.py#f"]
     assert table.column("modality").to_pylist() == ["code"]
     assert table.column("text_source").to_pylist() == ["code_source"]
+    assert table.column("vector_cohere").to_pylist() == [None]
     assert table.column("metadata").to_pylist() == ['{"lang": "python"}']
 
 

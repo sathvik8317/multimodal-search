@@ -19,8 +19,12 @@ def test_table_name():
     assert config.TABLE_NAME == "chunks"
 
 
-def test_embed_dim_matches_cohere_v4_default():
-    assert config.EMBED_DIM == 1536
+def test_cohere_embed_dim_matches_cohere_v4_default():
+    assert config.COHERE_EMBED_DIM == 1536
+
+
+def test_openai_embed_dim_matches_text_embedding_3_small():
+    assert config.OPENAI_EMBED_DIM == 1536
 
 
 def test_retrieval_tuning_knobs_are_positive_ints():
@@ -36,7 +40,8 @@ def test_retrieval_knobs_respect_funnel_ordering():
 
 
 def test_model_ids_are_nonempty_strings():
-    assert isinstance(config.EMBED_MODEL, str) and config.EMBED_MODEL
+    assert isinstance(config.COHERE_EMBED_MODEL, str) and config.COHERE_EMBED_MODEL
+    assert isinstance(config.OPENAI_EMBED_MODEL, str) and config.OPENAI_EMBED_MODEL
     assert isinstance(config.RERANK_MODEL, str) and config.RERANK_MODEL
 
 

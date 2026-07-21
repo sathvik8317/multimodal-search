@@ -15,7 +15,7 @@ from pathlib import Path
 from lancedb.table import Table
 
 from mmsearch import db
-from mmsearch.clients.protocols import Captioner, EmbeddingClient
+from mmsearch.clients.protocols import Captioner, Embedders
 from mmsearch.ingest.base import IngestStats, ingest_corpus
 
 
@@ -51,14 +51,15 @@ def format_report(stats: IngestStats) -> str:
 def _run_ingest_command(
     path: Path,
     *,
-    embedding_client: EmbeddingClient | None = None,
+    embedders: Embedders | None = None,
     captioner: Captioner | None = None,
     table: Table | None = None,
 ) -> int:
-    if embedding_client is None:
+    if embedders is None:
         from mmsearch.clients.cohere import CohereClient
+        from mmsearch.clients.openai import OpenAIClient
 
-        embedding_client = CohereClient()
+        embedders = Embedders(image=CohereClient(), text=OpenAIClient())
     if captioner is None:
         from mmsearch.clients.captioner_local import LocalCaptioner
 
@@ -66,7 +67,7 @@ def _run_ingest_command(
     if table is None:
         table = db.open_table()
 
-    stats = ingest_corpus(path, embedding_client, captioner, table)
+    stats = ingest_corpus(path, embedders, captioner, table)
     db.ensure_fts_index(table)
     print(format_report(stats))
     return 0

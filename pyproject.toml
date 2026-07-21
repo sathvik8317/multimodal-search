@@ -11,6 +11,7 @@ dependencies = [
     "lancedb>=0.13",
     "pyarrow==17.0.0",  # pinned: newer wheels (e.g. 25.x) trip Windows Smart App Control on this machine
     "cohere>=5.0",
+    "openai>=1.0",
     "pyyaml>=6.0",
     "pymupdf>=1.24",
     "pillow>=10.0",

@@ -37,3 +37,16 @@ class Reranker(Protocol):
 @runtime_checkable
 class Captioner(Protocol):
     def caption(self, image_bytes: bytes) -> str: ...
+
+
+@dataclass(frozen=True)
+class Embedders:
+    """The two embedding clients ingest routes to, by input kind.
+
+    image: embeds page/diagram raster bytes (Cohere Embed v4 -- the only
+    provider with a unified image+text space; see EMBEDDING_MIGRATION_PLAN.md).
+    text: embeds table/code/caption text (OpenAI text-embedding-3-small).
+    """
+
+    image: EmbeddingClient
+    text: EmbeddingClient

@@ -76,7 +76,7 @@ def ingest_code_file(path: Path, corpus_root: Path, embedding_client: EmbeddingC
                 modality=Modality.CODE,
                 content_text=context_body,
                 text_source=TextSource.CODE_SOURCE,
-                vector=vector,
+                vector_openai=vector,
                 source_path=relpath,
                 thumbnail_ref="",
                 metadata=metadata,

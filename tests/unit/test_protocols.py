@@ -2,6 +2,7 @@ import pytest
 
 from mmsearch.clients.protocols import (
     Captioner,
+    Embedders,
     EmbeddingClient,
     EmbedInput,
     Reranker,
@@ -90,3 +91,21 @@ def test_captioner_protocol_rejects_partial_object():
         pass
 
     assert not isinstance(NotACaptioner(), Captioner)
+
+
+# --- Embedders --------------------------------------------------------------------
+
+def test_embedders_holds_image_and_text_clients():
+    class ConformingClient:
+        def embed_documents(self, items: list[EmbedInput]) -> list[list[float]]:
+            return [[0.0]]
+
+        def embed_query(self, text: str) -> list[float]:
+            return [0.0]
+
+    image_client = ConformingClient()
+    text_client = ConformingClient()
+    embedders = Embedders(image=image_client, text=text_client)
+
+    assert embedders.image is image_client
+    assert embedders.text is text_client

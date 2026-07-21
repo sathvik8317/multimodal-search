@@ -2,8 +2,11 @@ from pathlib import Path
 
 from mmsearch import db
 from mmsearch.clients.fakes import FakeCaptioner, FakeEmbeddingClient
+from mmsearch.clients.protocols import Embedders
 from mmsearch.ingest.base import IngestStats
 from mmsearch.ingest.cli import _run_ingest_command, build_arg_parser, format_report, main
+
+EMBEDDERS = Embedders(image=FakeEmbeddingClient(), text=FakeEmbeddingClient())
 
 
 # --- build_arg_parser -----------------------------------------------------------------
@@ -65,7 +68,7 @@ def test_run_ingest_command_ingests_and_returns_zero(tmp_path, capsys):
 
     exit_code = _run_ingest_command(
         corpus_root,
-        embedding_client=FakeEmbeddingClient(),
+        embedders=EMBEDDERS,
         captioner=FakeCaptioner(),
         table=table,
     )
@@ -84,7 +87,7 @@ def test_run_ingest_command_builds_fts_index(tmp_path):
 
     _run_ingest_command(
         corpus_root,
-        embedding_client=FakeEmbeddingClient(),
+        embedders=EMBEDDERS,
         captioner=FakeCaptioner(),
         table=table,
     )

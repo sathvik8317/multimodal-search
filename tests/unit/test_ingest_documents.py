@@ -6,9 +6,12 @@ import pytest
 
 from mmsearch import config
 from mmsearch.clients.fakes import FakeCaptioner, FakeEmbeddingClient
+from mmsearch.clients.protocols import Embedders
 from mmsearch.ingest.documents import ingest_diagram, ingest_pdf
 from mmsearch.schema import Modality, TextSource
 from tests.fixtures import CORPUS_DIR
+
+EMBEDDERS = Embedders(image=FakeEmbeddingClient(), text=FakeEmbeddingClient())
 
 
 # --- ingest_pdf: real fixture PDF (has a real text layer) ---------------------------
@@ -18,7 +21,7 @@ def test_ingest_pdf_returns_one_row_per_page(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -30,7 +33,7 @@ def test_ingest_pdf_row_ids_are_correct(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -43,7 +46,7 @@ def test_ingest_pdf_uses_text_layer_when_present(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -56,7 +59,7 @@ def test_ingest_pdf_content_text_contains_expected_substrings(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -64,17 +67,18 @@ def test_ingest_pdf_content_text_contains_expected_substrings(tmp_path: Path):
     assert "p99 latency" in rows[1].content_text
 
 
-def test_ingest_pdf_vector_has_correct_dimension(tmp_path: Path):
+def test_ingest_pdf_text_layer_rows_have_only_cohere_vector(tmp_path: Path):
     pdf_path = CORPUS_DIR / "specs" / "rfc.pdf"
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
     for row in rows:
-        assert len(row.vector) == config.EMBED_DIM
+        assert len(row.vector_cohere) == config.COHERE_EMBED_DIM
+        assert row.vector_openai is None  # text-layer page: no caption, no OpenAI vector
 
 
 def test_ingest_pdf_writes_real_thumbnail_files(tmp_path: Path):
@@ -83,7 +87,7 @@ def test_ingest_pdf_writes_real_thumbnail_files(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=thumbnails_dir,
     )
@@ -97,7 +101,7 @@ def test_ingest_pdf_metadata_has_page_no_and_n_pages(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -114,7 +118,7 @@ def test_ingest_pdf_source_path_is_corpus_relative(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -127,19 +131,20 @@ def test_ingest_pdf_is_deterministic_across_runs(tmp_path: Path):
     rows1 = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs1",
     )
     rows2 = ingest_pdf(
         pdf_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs2",
     )
     assert [r.id for r in rows1] == [r.id for r in rows2]
-    assert [r.vector for r in rows1] == [r.vector for r in rows2]
+    assert [r.vector_cohere for r in rows1] == [r.vector_cohere for r in rows2]
+    assert [r.vector_openai for r in rows1] == [r.vector_openai for r in rows2]
 
 
 # --- ingest_pdf: synthetic textless (scanned) page falls back to captioning ---------
@@ -160,7 +165,7 @@ def test_ingest_pdf_falls_back_to_caption_for_textless_page(tmp_path: Path):
     rows = ingest_pdf(
         pdf_path,
         tmp_path,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -170,6 +175,24 @@ def test_ingest_pdf_falls_back_to_caption_for_textless_page(tmp_path: Path):
     assert rows[0].content_text != ""
 
 
+def test_ingest_pdf_scanned_page_gets_both_vectors(tmp_path: Path):
+    # Q1 decision: caption rows keep the Cohere image vector AND gain an
+    # OpenAI vector over the caption text (see EMBEDDING_MIGRATION_PLAN.md).
+    pdf_path = tmp_path / "scanned.pdf"
+    _make_blank_pdf(pdf_path)
+
+    rows = ingest_pdf(
+        pdf_path,
+        tmp_path,
+        EMBEDDERS,
+        FakeCaptioner(),
+        thumbnails_dir=tmp_path / "thumbs",
+    )
+
+    assert len(rows[0].vector_cohere) == config.COHERE_EMBED_DIM
+    assert len(rows[0].vector_openai) == config.OPENAI_EMBED_DIM
+
+
 # --- ingest_diagram -------------------------------------------------------------------
 
 def test_ingest_diagram_returns_row_with_correct_id(tmp_path: Path):
@@ -177,7 +200,7 @@ def test_ingest_diagram_returns_row_with_correct_id(tmp_path: Path):
     row = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -189,7 +212,7 @@ def test_ingest_diagram_always_uses_vlm_caption(tmp_path: Path):
     row = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -204,7 +227,7 @@ def test_ingest_diagram_writes_thumbnail(tmp_path: Path):
     row = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=thumbnails_dir,
     )
@@ -217,7 +240,7 @@ def test_ingest_diagram_metadata_has_width_height_and_caption_model(tmp_path: Pa
     row = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
@@ -228,16 +251,17 @@ def test_ingest_diagram_metadata_has_width_height_and_caption_model(tmp_path: Pa
     assert metadata["caption_model"]
 
 
-def test_ingest_diagram_vector_has_correct_dimension(tmp_path: Path):
+def test_ingest_diagram_gets_both_cohere_image_and_openai_caption_vectors(tmp_path: Path):
     image_path = CORPUS_DIR / "docs" / "auth-flow.png"
     row = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs",
     )
-    assert len(row.vector) == config.EMBED_DIM
+    assert len(row.vector_cohere) == config.COHERE_EMBED_DIM
+    assert len(row.vector_openai) == config.OPENAI_EMBED_DIM
 
 
 def test_ingest_diagram_is_deterministic(tmp_path: Path):
@@ -245,17 +269,18 @@ def test_ingest_diagram_is_deterministic(tmp_path: Path):
     row1 = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs1",
     )
     row2 = ingest_diagram(
         image_path,
         CORPUS_DIR,
-        FakeEmbeddingClient(),
+        EMBEDDERS,
         FakeCaptioner(),
         thumbnails_dir=tmp_path / "thumbs2",
     )
     assert row1.id == row2.id
     assert row1.content_text == row2.content_text
-    assert row1.vector == row2.vector
+    assert row1.vector_cohere == row2.vector_cohere
+    assert row1.vector_openai == row2.vector_openai

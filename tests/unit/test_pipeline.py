@@ -8,16 +8,30 @@ from mmsearch.retrieve.pipeline import _row_to_result, build_search_fn
 from mmsearch.retrieve.types import SearchResult
 from mmsearch.schema import Modality, Row, TextSource
 
-EMBEDDER = FakeEmbeddingClient()
+COHERE_EMBEDDER = FakeEmbeddingClient(dim=config.COHERE_EMBED_DIM)
+OPENAI_EMBEDDER = FakeEmbeddingClient(dim=config.OPENAI_EMBED_DIM)
 
 
 def _row(id_: str, content_text: str, modality: Modality, **overrides) -> Row:
+    """Populate vectors the way real ingestion does: pdf_page/diagram get a
+    Cohere image vector (diagram/scanned-caption pages also get an OpenAI
+    caption vector); table/code get an OpenAI text vector only.
+    """
+    text_source = overrides.get("text_source", TextSource.CODE_SOURCE)
+    vector_cohere = None
+    vector_openai = None
+    if modality in (Modality.PDF_PAGE, Modality.DIAGRAM):
+        vector_cohere = COHERE_EMBEDDER.embed_documents([EmbedInput(text=content_text)])[0]
+    if modality in (Modality.TABLE, Modality.CODE) or text_source == TextSource.VLM_CAPTION:
+        vector_openai = OPENAI_EMBEDDER.embed_documents([EmbedInput(text=content_text)])[0]
+
     defaults = dict(
         id=id_,
         modality=modality,
         content_text=content_text,
-        text_source=TextSource.CODE_SOURCE,
-        vector=EMBEDDER.embed_documents([EmbedInput(text=content_text)])[0],
+        text_source=text_source,
+        vector_cohere=vector_cohere,
+        vector_openai=vector_openai,
         source_path="src/a.py",
     )
     defaults.update(overrides)
@@ -67,7 +81,7 @@ class RecordingRetrieverTable:
 # --- rrf+rerank mode (default) -----------------------------------------------------------
 
 def test_rrf_rerank_returns_up_to_k_results_of_right_shape(table):
-    search_fn = build_search_fn(table, EMBEDDER, FakeReranker(), mode="rrf+rerank")
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank")
 
     results = search_fn("auth token flow diagram", k=3)
 
@@ -81,7 +95,7 @@ def test_rrf_rerank_returns_up_to_k_results_of_right_shape(table):
 
 
 def test_rrf_rerank_falls_back_to_rrf_order_when_reranker_raises(table):
-    search_fn = build_search_fn(table, EMBEDDER, RaisingReranker(), mode="rrf+rerank")
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, RaisingReranker(), mode="rrf+rerank")
 
     # Should not raise, despite the reranker always raising.
     results = search_fn("auth token flow diagram", k=3)
@@ -90,7 +104,7 @@ def test_rrf_rerank_falls_back_to_rrf_order_when_reranker_raises(table):
 
 
 def test_rrf_rerank_falls_back_when_reranker_is_none(table):
-    search_fn = build_search_fn(table, EMBEDDER, None, mode="rrf+rerank")
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, None, mode="rrf+rerank")
 
     results = search_fn("auth token flow diagram", k=3)
 
@@ -100,7 +114,7 @@ def test_rrf_rerank_falls_back_when_reranker_is_none(table):
 # --- vector-only mode ----------------------------------------------------------------------
 
 def test_vector_only_never_calls_fts_or_reranker(table):
-    search_fn = build_search_fn(table, EMBEDDER, NeverCallReranker(), mode="vector-only")
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, NeverCallReranker(), mode="vector-only")
 
     results = search_fn("auth token flow diagram", k=3)
 
@@ -114,35 +128,39 @@ def test_vector_only_does_not_invoke_fts_search(table, monkeypatch):
     calls = []
 
     def spy_search(self, query, query_type=None, *args, **kwargs):
-        calls.append(query_type)
+        calls.append((query_type, kwargs.get("vector_column_name")))
         return original_search(self, query, query_type=query_type, *args, **kwargs)
 
     monkeypatch.setattr(type(table), "search", spy_search)
 
-    search_fn = build_search_fn(table, EMBEDDER, FakeReranker(), mode="vector-only")
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="vector-only")
     search_fn("auth token flow diagram", k=3)
 
-    assert "fts" not in calls
-    assert "vector" in calls
+    query_types = [c[0] for c in calls]
+    vector_columns = {c[1] for c in calls if c[0] == "vector"}
+    assert "fts" not in query_types
+    assert vector_columns == {"vector_cohere", "vector_openai"}
 
 
 # --- rrf-only mode -------------------------------------------------------------------------
 
-def test_rrf_only_calls_both_retrievers_but_never_reranker(table, monkeypatch):
+def test_rrf_only_calls_both_vector_retrievers_and_fts_but_never_reranker(table, monkeypatch):
     original_search = type(table).search
     calls = []
 
     def spy_search(self, query, query_type=None, *args, **kwargs):
-        calls.append(query_type)
+        calls.append((query_type, kwargs.get("vector_column_name")))
         return original_search(self, query, query_type=query_type, *args, **kwargs)
 
     monkeypatch.setattr(type(table), "search", spy_search)
 
-    search_fn = build_search_fn(table, EMBEDDER, NeverCallReranker(), mode="rrf-only")
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, NeverCallReranker(), mode="rrf-only")
     results = search_fn("auth token flow diagram", k=3)
 
-    assert "fts" in calls
-    assert "vector" in calls
+    query_types = [c[0] for c in calls]
+    vector_columns = {c[1] for c in calls if c[0] == "vector"}
+    assert "fts" in query_types
+    assert vector_columns == {"vector_cohere", "vector_openai"}
     assert 0 < len(results) <= 3
 
 

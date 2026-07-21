@@ -71,15 +71,28 @@ class Row:
     modality: Modality
     content_text: str
     text_source: TextSource
-    vector: list[float]
     source_path: str
+    # Two provider-specific embedding spaces (see EMBEDDING_MIGRATION_PLAN.md):
+    # vector_cohere is Cohere Embed v4 over the page/diagram image; vector_openai
+    # is OpenAI text-embedding-3-small over table/code/caption text. A row must
+    # populate at least one; diagram/scanned-page rows populate both.
+    vector_cohere: list[float] | None = None
+    vector_openai: list[float] | None = None
     thumbnail_ref: str = ""
     metadata: str = "{}"
 
     def __post_init__(self) -> None:
-        if len(self.vector) != config.EMBED_DIM:
+        if self.vector_cohere is None and self.vector_openai is None:
+            raise ValueError("at least one of vector_cohere/vector_openai must be set")
+        if self.vector_cohere is not None and len(self.vector_cohere) != config.COHERE_EMBED_DIM:
             raise ValueError(
-                f"vector length {len(self.vector)} != config.EMBED_DIM ({config.EMBED_DIM})"
+                f"vector_cohere length {len(self.vector_cohere)} != "
+                f"config.COHERE_EMBED_DIM ({config.COHERE_EMBED_DIM})"
+            )
+        if self.vector_openai is not None and len(self.vector_openai) != config.OPENAI_EMBED_DIM:
+            raise ValueError(
+                f"vector_openai length {len(self.vector_openai)} != "
+                f"config.OPENAI_EMBED_DIM ({config.OPENAI_EMBED_DIM})"
             )
         if not self.content_text:
             raise ValueError("content_text must not be empty (see PLAN.md decision 5)")
@@ -91,7 +104,8 @@ ARROW_SCHEMA = pa.schema(
         pa.field("modality", pa.string()),
         pa.field("content_text", pa.string()),
         pa.field("text_source", pa.string()),
-        pa.field("vector", pa.list_(pa.float32(), config.EMBED_DIM)),
+        pa.field("vector_cohere", pa.list_(pa.float32(), config.COHERE_EMBED_DIM)),
+        pa.field("vector_openai", pa.list_(pa.float32(), config.OPENAI_EMBED_DIM)),
         pa.field("source_path", pa.string()),
         pa.field("thumbnail_ref", pa.string()),
         pa.field("metadata", pa.string()),
@@ -106,7 +120,8 @@ def rows_to_table(rows: list[Row]) -> pa.Table:
         columns["modality"].append(row.modality.value)
         columns["content_text"].append(row.content_text)
         columns["text_source"].append(row.text_source.value)
-        columns["vector"].append(row.vector)
+        columns["vector_cohere"].append(row.vector_cohere)
+        columns["vector_openai"].append(row.vector_openai)
         columns["source_path"].append(row.source_path)
         columns["thumbnail_ref"].append(row.thumbnail_ref)
         columns["metadata"].append(row.metadata)

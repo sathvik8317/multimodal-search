@@ -96,7 +96,8 @@ def test_start_and_end_lines_are_internally_consistent_and_nonoverlapping():
 def test_every_row_vector_has_correct_dim():
     rows = _rows()
     for row in rows:
-        assert len(row.vector) == config.EMBED_DIM
+        assert row.vector_cohere is None
+        assert len(row.vector_openai) == config.OPENAI_EMBED_DIM
 
 
 # --- determinism -------------------------------------------------------------------------

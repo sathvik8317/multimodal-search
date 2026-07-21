@@ -6,7 +6,7 @@ from mmsearch.db import ensure_fts_index, open_table, upsert
 from mmsearch.schema import ARROW_SCHEMA, Modality, Row, TextSource
 
 
-def _unit_vector(index: int, dim: int = config.EMBED_DIM) -> list[float]:
+def _unit_vector(index: int, dim: int = config.OPENAI_EMBED_DIM) -> list[float]:
     vector = [0.0] * dim
     vector[index] = 1.0
     return vector
@@ -18,7 +18,7 @@ def _row(id_: str, content_text: str, vector_index: int, **overrides) -> Row:
         modality=Modality.CODE,
         content_text=content_text,
         text_source=TextSource.CODE_SOURCE,
-        vector=_unit_vector(vector_index),
+        vector_openai=_unit_vector(vector_index),
         source_path="src/a.py",
     )
     defaults.update(overrides)
@@ -118,6 +118,10 @@ def test_vector_search_finds_nearest_neighbor(tmp_path):
         ],
     )
 
-    results = table.search(_unit_vector(0), query_type="vector").limit(1).to_list()
+    results = (
+        table.search(_unit_vector(0), query_type="vector", vector_column_name="vector_openai")
+        .limit(1)
+        .to_list()
+    )
 
     assert results[0]["id"] == "code:a.py#f"
