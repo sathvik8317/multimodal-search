@@ -109,6 +109,65 @@ def test_ingest_table_truncation_keeps_the_first_rows(tmp_path):
     assert "| 200 | 400 |" not in row.content_text  # 201st data row absent
 
 
+# --- char budget (MAX_TABLE_EMBED_CHARS) ---------------------------------------------------
+#
+# A wide table (many columns) can blow OpenAI's 8192-token input limit well
+# before hitting MAX_TABLE_ROWS -- this is the real bug the migration
+# introduced (see EMBEDDING_MIGRATION_PLAN.md): a 200-row cap sized for
+# Cohere's much larger context silently produced embed inputs OpenAI
+# rejected for 3 of 4 real corpus CSVs. These tests build a table wide
+# enough that the char budget, not the row cap, is what binds.
+
+def _write_wide_csv(path, n_data_rows: int, n_cols: int = 20, cell_width: int = 15) -> None:
+    columns = [f"col{i}" for i in range(n_cols)]
+    lines = [",".join(columns)]
+    for row_i in range(n_data_rows):
+        cell = "x" * cell_width
+        lines.append(",".join(f"{cell}{row_i}" for _ in range(n_cols)))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_ingest_table_wide_csv_is_truncated_by_char_budget_before_row_cap(tmp_path):
+    csv_path = tmp_path / "wide.csv"
+    _write_wide_csv(csv_path, n_data_rows=150, n_cols=20, cell_width=15)  # well under MAX_TABLE_ROWS
+
+    row = ingest_table(csv_path, tmp_path, FakeEmbeddingClient())
+
+    metadata = json.loads(row.metadata)
+    assert metadata["truncated"] is True
+    assert metadata["n_rows"] < 150  # char budget bound before the row cap did
+    assert len(row.content_text) <= config.MAX_TABLE_EMBED_CHARS
+
+
+def test_ingest_table_char_budget_always_keeps_at_least_one_row(tmp_path):
+    csv_path = tmp_path / "huge_row.csv"
+    # A single row alone exceeds MAX_TABLE_EMBED_CHARS -- must still be kept,
+    # not dropped to zero rows (which would also violate content_text
+    # must-not-be-empty).
+    _write_wide_csv(csv_path, n_data_rows=1, n_cols=20, cell_width=1000)
+
+    row = ingest_table(csv_path, tmp_path, FakeEmbeddingClient())
+
+    metadata = json.loads(row.metadata)
+    assert metadata["n_rows"] == 1
+    assert metadata["truncated"] is False  # the only row available was kept, nothing was dropped
+    data_lines = row.content_text.strip().splitlines()[2:]
+    assert len(data_lines) == 1
+
+
+def test_ingest_table_narrow_csv_under_row_cap_is_unaffected_by_char_budget(tmp_path):
+    # Sanity check: the existing narrow-CSV row-cap tests above must still
+    # bind on MAX_TABLE_ROWS, not on the new char budget.
+    csv_path = tmp_path / "narrow_big.csv"
+    _write_csv(csv_path, 250)
+
+    row = ingest_table(csv_path, tmp_path, FakeEmbeddingClient())
+
+    metadata = json.loads(row.metadata)
+    assert metadata["n_rows"] == config.MAX_TABLE_ROWS
+    assert len(row.content_text) <= config.MAX_TABLE_EMBED_CHARS
+
+
 def test_ingest_table_is_deterministic():
     csv_path = CORPUS_DIR / "data" / "latency.csv"
     row1 = ingest_table(csv_path, CORPUS_DIR, FakeEmbeddingClient())

@@ -40,6 +40,13 @@ MAX_TABLE_ROWS = 200
 
 # Character budget for the embedded markdown, independent of MAX_TABLE_ROWS: a
 # wide table (many columns) can exceed OpenAI's 8192-token input limit well
-# before hitting the row cap (see EMBEDDING_MIGRATION_PLAN.md -- confirmed
-# live against the real corpus). Placeholder pending empirical validation.
-MAX_TABLE_EMBED_CHARS = 20000
+# before hitting the row cap. Validated by direct calibration against all 4
+# real corpus CSVs (12-18 columns): 20000 chars was confirmed UNSAFE -- 2 of 4
+# still exceeded the 8192-token limit (automobile_dataset.csv at 19958 chars,
+# ecommerce_sales_analytics_5000.csv at 18860 chars both hard-failed with a
+# live BadRequestError). 12000 chars cleared all 4 with margin (11873-11961
+# chars each). Tokenization density varies by content, so this is a
+# conservative empirical bound, not a fixed chars-per-token formula -- if a
+# future corpus file still overflows at this budget, lower it further rather
+# than trusting an untested chars/token ratio (EMBEDDING_MIGRATION_PLAN.md).
+MAX_TABLE_EMBED_CHARS = 12000

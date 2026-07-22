@@ -47,3 +47,19 @@ def test_model_ids_are_nonempty_strings():
 
 def test_thumbnails_dir_is_relative_to_data_dir():
     assert config.THUMBNAILS_DIR == config.DATA_DIR / "thumbnails"
+
+
+def test_max_table_embed_chars_is_a_positive_int_under_the_row_cap_estimate():
+    assert isinstance(config.MAX_TABLE_EMBED_CHARS, int)
+    assert config.MAX_TABLE_EMBED_CHARS > 0
+
+
+def test_max_table_embed_chars_matches_calibrated_safe_value():
+    # 12000 was validated by direct calibration against all 4 real corpus
+    # CSVs (12-18 columns): 20000 was confirmed UNSAFE (2 of 4 exceeded
+    # OpenAI's 8192-token limit with a live BadRequestError); 12000 cleared
+    # all 4 with margin. See EMBEDDING_MIGRATION_PLAN.md and config.py's
+    # comment for the exact figures. If this value ever needs to change,
+    # re-calibrate against real files rather than trusting a chars/token
+    # formula -- tokenization density varies by content.
+    assert config.MAX_TABLE_EMBED_CHARS == 12000
