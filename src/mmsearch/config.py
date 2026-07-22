@@ -26,11 +26,19 @@ FETCH_N = 50
 RERANK_M = 25
 TOP_K = 5
 
-# Tuned against the OLD single-space (Cohere-only) index via a controlled
-# rrf-only comparison at k=60 vs. k=20 (see prior commit history for the
-# methodology). The move to a two-space (Cohere + OpenAI), three-way RRF
-# fusion invalidates that tuning -- retune against the re-ingested index and
-# replace this comment with the new evidence (EMBEDDING_MIGRATION_PLAN.md §8).
+# Re-validated (not just carried over) against the new three-way (Cohere +
+# OpenAI + FTS) fusion via the same controlled rrf-only k=60-vs-20 comparison
+# used for the original single-space tuning, isolated to rrf-only mode (no
+# reranker involved) so the effect is attributable to RRF_K alone. Result:
+# aggregate hit-rate@5 is 0.920 at k=20 vs. 0.880 at k=60 on the 25-label set.
+# 15/25 queries are identical at both k values; of the 10 that reorder, only
+# 1 flips hit-to-miss (k=20 -> k=60), and it's the same mechanism the
+# original tuning found: a code query's correct symbol sits at rank 5 at
+# k=20 and gets diluted past top-5 at k=60 as the flatter k=60 weighting lets
+# weaker competition in one retriever crowd out a candidate already strong in
+# another. Zero queries regress in the other direction. The mechanism is
+# retriever-count-agnostic, so it reproduces unchanged whether fusing 2 lists
+# or 3. See EMBEDDING_MIGRATION_PLAN.md for the full per-query diff.
 RRF_K = 20
 
 # Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
