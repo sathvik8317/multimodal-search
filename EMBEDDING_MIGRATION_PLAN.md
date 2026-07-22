@@ -128,6 +128,25 @@ is unchanged.
 6. Optional `live`-marked smoke tests for `OpenAIClient` against the real API (opt-in, like Cohere's).
    **Not built** — the one-off live check in step 1 above served the same purpose for this migration.
 
+## Known gaps
+
+**No failure protection on either provider's query embed call — unlike the reranker.** In
+`pipeline.py`'s `search()` closure, `cohere_embedder.embed_query(query)` and
+`openai_embedder.embed_query(query)` are both called with no `try`/`except` around them. Contrast with
+the reranker call a few lines later, which is wrapped and degrades gracefully to RRF-fused order on any
+exception. There is no equivalent degradation path for a failed query embed on either provider, and
+`api/main.py`'s `/search` handler doesn't catch anything either — so once a provider's own retry/backoff
+is exhausted (or the failure is non-transient), the exception propagates unhandled and surfaces as a loud
+500, not a degraded-but-working response.
+
+This is a **real regression versus pre-migration**, not just a pre-existing gap carried forward: a query
+embed used to depend on one provider (Cohere) succeeding; it now depends on **two** providers succeeding
+independently, which doubles the availability surface area for a search request to fail outright.
+
+Not blocking this merge, but worth a future fix — e.g. catch a failed embed on one provider and degrade
+to single-provider vector retrieval (skip that provider's `table.search(...)` call, fuse whatever's left),
+mirroring the reranker's existing fallback pattern rather than inventing a new one.
+
 ## Out of scope (future levers, noted not built)
 - **rrf-only default** to drop Cohere Rerank spend entirely.
 - **Modality-scoped query routing** to skip a provider's query embed when a modality is filtered out.
