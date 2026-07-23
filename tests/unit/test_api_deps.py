@@ -107,3 +107,64 @@ def test_rate_limit_does_not_grow_unbounded_across_window_boundary(monkeypatch):
     deps.rate_limit(settings=settings)
 
     assert len(deps._hits) == 1
+
+
+# --- upload_rate_limit: separate budget from rate_limit -----------------------------------
+
+@pytest.fixture(autouse=True)
+def _clear_upload_rate_limit_state():
+    deps._upload_hits.clear()
+    yield
+    deps._upload_hits.clear()
+
+
+def _upload_settings(**overrides) -> Settings:
+    defaults = dict(_env_file=None, api_key="correct-key")
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+def test_upload_rate_limit_allows_calls_under_its_max():
+    settings = _upload_settings(upload_rate_limit_max=3, upload_rate_limit_window=60.0)
+
+    deps.upload_rate_limit(settings=settings)
+    deps.upload_rate_limit(settings=settings)
+    deps.upload_rate_limit(settings=settings)
+
+
+def test_upload_rate_limit_blocks_the_call_over_its_max():
+    settings = _upload_settings(upload_rate_limit_max=3, upload_rate_limit_window=60.0)
+
+    for _ in range(3):
+        deps.upload_rate_limit(settings=settings)
+
+    with pytest.raises(HTTPException) as exc_info:
+        deps.upload_rate_limit(settings=settings)
+    assert exc_info.value.status_code == 429
+
+
+def test_upload_rate_limit_uses_a_separate_budget_from_search_rate_limit():
+    # Exhausting /search's budget must not affect /upload's, and vice versa --
+    # ingestion is far more expensive per request, so it gets its own cap.
+    settings = _settings(rate_limit_max=1, rate_limit_window=60.0)
+    upload_settings = _upload_settings(upload_rate_limit_max=1, upload_rate_limit_window=60.0)
+
+    deps.rate_limit(settings=settings)
+    with pytest.raises(HTTPException):
+        deps.rate_limit(settings=settings)
+
+    deps.upload_rate_limit(settings=upload_settings)  # must not raise: separate counter
+
+
+def test_upload_rate_limit_allows_again_after_window_elapses(monkeypatch):
+    settings = _upload_settings(upload_rate_limit_max=2, upload_rate_limit_window=60.0)
+    now = [1000.0]
+    monkeypatch.setattr(deps.time, "monotonic", lambda: now[0])
+
+    deps.upload_rate_limit(settings=settings)
+    deps.upload_rate_limit(settings=settings)
+    with pytest.raises(HTTPException):
+        deps.upload_rate_limit(settings=settings)
+
+    now[0] += 61.0
+    deps.upload_rate_limit(settings=settings)  # should not raise

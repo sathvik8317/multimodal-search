@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from mmsearch import config, db
 from mmsearch.api.main import create_app
+from mmsearch.clients.captioner_api import ApiCaptioner
 from mmsearch.clients.cohere import CohereClient
 from mmsearch.clients.openai import OpenAIClient
+from mmsearch.clients.protocols import Embedders
 from mmsearch.retrieve.pipeline import build_search_fn
 from mmsearch.settings import get_settings
 from mmsearch.storage.r2 import R2Storage
@@ -45,4 +47,11 @@ app = create_app(
     thumbnails_dir=config.THUMBNAILS_DIR,
     settings=_settings,
     upload_thumbnail_storage=_upload_thumbnail_storage,
+    upload_table=_table,
+    upload_embedders=Embedders(image=_cohere_client, text=_openai_client),
+    # Local moondream2 needs torch/GPU the deployed instance doesn't have;
+    # ApiCaptioner (OpenAI vision) captions uploaded diagrams/scanned pages
+    # instead. Local CLI ingestion is unaffected -- it still uses LocalCaptioner.
+    upload_captioner=ApiCaptioner(),
+    upload_staging_root=config.UPLOAD_STAGING_DIR,
 )

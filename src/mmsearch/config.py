@@ -5,6 +5,11 @@ DATA_DIR = PROJECT_ROOT / "data"
 THUMBNAILS_DIR = DATA_DIR / "thumbnails"
 LANCEDB_URI = DATA_DIR / "lancedb"
 CAPTION_CACHE_DIR = DATA_DIR / "caption_cache"
+# Where /upload stages an uploaded file before ingest_uploaded_file() reads
+# it. Local/ephemeral by design -- Render's filesystem is wiped on every
+# restart/redeploy, which is fine: staged source files aren't the record of
+# truth, the LanceDB row (on R2) and the pushed thumbnail (on R2) are.
+UPLOAD_STAGING_DIR = DATA_DIR / "upload_staging"
 
 TABLE_NAME = "chunks"
 

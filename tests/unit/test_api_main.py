@@ -2,8 +2,11 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from mmsearch import db
 from mmsearch.api import deps
 from mmsearch.api.main import _resolve_thumbnail, create_app
+from mmsearch.clients.fakes import FakeCaptioner, FakeEmbeddingClient
+from mmsearch.clients.protocols import Embedders
 from mmsearch.retrieve.types import SearchResult
 from mmsearch.schema import Modality, TextSource
 from mmsearch.settings import Settings, get_settings
@@ -128,8 +131,10 @@ def test_thumbnails_serves_real_file(tmp_path):
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     deps._hits.clear()
+    deps._upload_hits.clear()
     yield
     deps._hits.clear()
+    deps._upload_hits.clear()
 
 
 def test_search_without_key_returns_401_and_never_calls_search_fn(tmp_path):
@@ -286,6 +291,194 @@ def test_healthz_requires_no_key(tmp_path):
     response = client.get("/healthz")
 
     assert response.status_code == 200
+
+
+# --- /upload -----------------------------------------------------------------------------
+
+_UPLOAD_EMBEDDERS = Embedders(image=FakeEmbeddingClient(), text=FakeEmbeddingClient())
+
+
+def _upload_app(tmp_path, **overrides):
+    kwargs = dict(
+        thumbnails_dir=tmp_path / "thumbnails",
+        settings=_test_settings(upload_rate_limit_max=1000, upload_rate_limit_window=60.0),
+        upload_table=db.open_table(uri=tmp_path / "lancedb"),
+        upload_embedders=_UPLOAD_EMBEDDERS,
+        upload_captioner=FakeCaptioner(),
+        upload_staging_root=tmp_path / "staging",
+    )
+    kwargs.update(overrides)
+    return create_app(fake_search_fn, **kwargs)
+
+
+def test_upload_without_key_returns_401_and_never_ingests(tmp_path):
+    app = _upload_app(tmp_path)
+    client = TestClient(app)
+
+    response = client.post("/upload", files={"file": ("greet.py", b"def f(): pass\n")})
+
+    assert response.status_code == 401
+
+
+def test_upload_with_correct_key_ingests_code_file(tmp_path):
+    app = _upload_app(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("greet.py", b"def greet():\n    return 'hi'\n")},
+        data={"uploader": "alice"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["filename"] == "greet.py"
+    assert body["modality"] == "code"
+    assert body["rows_written"] == 1
+
+
+def test_upload_route_absent_when_not_configured(tmp_path):
+    app = create_app(
+        fake_search_fn, thumbnails_dir=tmp_path, settings=_test_settings()
+    )  # no upload_* kwargs
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("greet.py", b"def f(): pass\n")},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 404
+
+
+def test_upload_unsupported_extension_returns_415(tmp_path):
+    app = _upload_app(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("notes.txt", b"just notes")},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 415
+
+
+def test_upload_content_extension_mismatch_returns_415(tmp_path):
+    app = _upload_app(tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("fake.pdf", b"not a real pdf, just text")},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 415
+
+
+def test_upload_oversized_file_returns_413(tmp_path):
+    app = _upload_app(tmp_path, max_upload_bytes=10)
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("greet.py", b"x" * 100)},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 413
+
+
+def test_upload_has_its_own_rate_limit_separate_from_search(tmp_path):
+    # /search's shared budget is exhausted via _test_settings(rate_limit_max=1000)
+    # elsewhere; here upload's own budget is what's under test.
+    app = _upload_app(
+        tmp_path,
+        settings=_test_settings(upload_rate_limit_max=1, upload_rate_limit_window=60.0),
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/upload",
+        files={"file": ("a.py", b"def f(): pass\n")},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    second = client.post(
+        "/upload",
+        files={"file": ("b.py", b"def g(): pass\n")},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+
+def test_upload_pushes_new_thumbnail_to_configured_r2_storage(tmp_path):
+    import io
+
+    from PIL import Image
+
+    class _SpyR2Storage:
+        def __init__(self):
+            self.put_calls: list[tuple[str, bytes]] = []
+
+        def get_bytes(self, key: str) -> bytes:
+            raise FileNotFoundError(key)
+
+        def put_bytes(self, key: str, data: bytes) -> None:
+            self.put_calls.append((key, data))
+
+    storage = _SpyR2Storage()
+    app = _upload_app(tmp_path, upload_thumbnail_storage=storage)
+    client = TestClient(app)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), "white").save(buf, format="PNG")
+
+    response = client.post(
+        "/upload",
+        files={"file": ("diagram.png", buf.getvalue())},
+        data={"uploader": "carol"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 200
+    assert len(storage.put_calls) == 1
+    key, data = storage.put_calls[0]
+    assert key.startswith("uploads/carol/")
+    assert data == buf.getvalue()
+
+
+def test_upload_refreshes_table_so_search_sees_new_rows_immediately(tmp_path):
+    class _CheckoutSpyTable:
+        def __init__(self, real_table):
+            self._real = real_table
+            self.checkout_latest_calls = 0
+
+        def checkout_latest(self):
+            self.checkout_latest_calls += 1
+            return self._real.checkout_latest()
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    real_table = db.open_table(uri=tmp_path / "lancedb")
+    spy_table = _CheckoutSpyTable(real_table)
+    app = _upload_app(tmp_path, upload_table=spy_table)
+    client = TestClient(app)
+
+    response = client.post(
+        "/upload",
+        files={"file": ("greet.py", b"def greet(): pass\n")},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+
+    assert response.status_code == 200
+    assert spy_table.checkout_latest_calls == 1
 
 
 # --- /thumbnails path-containment (trust boundary) -----------------------------------------
