@@ -202,6 +202,81 @@ def test_thumbnails_nonexistent_file_returns_404(tmp_path):
     assert response.status_code == 404
 
 
+def test_thumbnails_serves_uploaded_file_from_r2_storage(tmp_path):
+    class _FakeR2Storage:
+        def get_bytes(self, key: str) -> bytes:
+            assert key == "uploads/alice/img.png"
+            return b"r2-png-bytes"
+
+    app = create_app(
+        fake_search_fn,
+        thumbnails_dir=tmp_path,
+        settings=_test_settings(),
+        upload_thumbnail_storage=_FakeR2Storage(),
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/thumbnails/uploads/alice/img.png", headers={"X-API-Key": TEST_API_KEY}
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"r2-png-bytes"
+    assert response.headers["content-type"] == "image/png"
+
+
+def test_thumbnails_uploads_prefix_missing_key_returns_404(tmp_path):
+    class _EmptyR2Storage:
+        def get_bytes(self, key: str) -> bytes:
+            raise FileNotFoundError(key)
+
+    app = create_app(
+        fake_search_fn,
+        thumbnails_dir=tmp_path,
+        settings=_test_settings(),
+        upload_thumbnail_storage=_EmptyR2Storage(),
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/thumbnails/uploads/alice/missing.png", headers={"X-API-Key": TEST_API_KEY}
+    )
+
+    assert response.status_code == 404
+
+
+def test_thumbnails_uploads_prefix_without_storage_configured_returns_404(tmp_path):
+    app = create_app(fake_search_fn, thumbnails_dir=tmp_path, settings=_test_settings())
+    client = TestClient(app)
+
+    response = client.get(
+        "/thumbnails/uploads/alice/img.png", headers={"X-API-Key": TEST_API_KEY}
+    )
+
+    assert response.status_code == 404
+
+
+def test_thumbnails_local_path_unaffected_by_upload_storage_present(tmp_path):
+    (tmp_path / "auth.png").write_bytes(b"local-png-bytes")
+
+    class _UnusedR2Storage:
+        def get_bytes(self, key: str) -> bytes:
+            raise AssertionError("should not be called for a non-uploads/ path")
+
+    app = create_app(
+        fake_search_fn,
+        thumbnails_dir=tmp_path,
+        settings=_test_settings(),
+        upload_thumbnail_storage=_UnusedR2Storage(),
+    )
+    client = TestClient(app)
+
+    response = client.get("/thumbnails/auth.png", headers={"X-API-Key": TEST_API_KEY})
+
+    assert response.status_code == 200
+    assert response.content == b"local-png-bytes"
+
+
 def test_healthz_requires_no_key(tmp_path):
     # /healthz itself has no dependency on settings, but create_app() now always
     # touches settings once (for CORS), so this still needs to pass a valid one.

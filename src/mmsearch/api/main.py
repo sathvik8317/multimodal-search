@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import mimetypes
 from dataclasses import asdict
 from pathlib import Path
+from typing import Protocol
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from mmsearch import config
@@ -16,6 +18,12 @@ from mmsearch.retrieve.types import SearchFn
 from mmsearch.settings import Settings, get_settings
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+_UPLOADS_PREFIX = "uploads/"
+
+
+class ThumbnailStorage(Protocol):
+    def get_bytes(self, key: str) -> bytes: ...
 
 
 def _resolve_thumbnail(thumbnails_root: Path, thumb_path: str) -> Path:
@@ -37,6 +45,7 @@ def create_app(
     search_fn: SearchFn,
     thumbnails_dir: Path = config.THUMBNAILS_DIR,
     settings: Settings | None = None,
+    upload_thumbnail_storage: ThumbnailStorage | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Multimodal Search")
 
@@ -71,7 +80,16 @@ def create_app(
         return [asdict(result) for result in results]
 
     @app.get("/thumbnails/{thumb_path:path}", dependencies=[Depends(require_api_key)])
-    def get_thumbnail(thumb_path: str) -> FileResponse:
+    def get_thumbnail(thumb_path: str) -> Response:
+        if thumb_path.startswith(_UPLOADS_PREFIX):
+            if upload_thumbnail_storage is None:
+                raise HTTPException(status_code=404)
+            try:
+                data = upload_thumbnail_storage.get_bytes(thumb_path)
+            except FileNotFoundError:
+                raise HTTPException(status_code=404) from None
+            media_type = mimetypes.guess_type(thumb_path)[0] or "application/octet-stream"
+            return Response(content=data, media_type=media_type)
         return FileResponse(_resolve_thumbnail(thumbnails_dir, thumb_path))
 
     app.mount("/ui", StaticFiles(directory=_STATIC_DIR, html=True), name="ui")

@@ -1,6 +1,7 @@
 import pyarrow as pa
 import pytest
 
+import mmsearch.db as db_module
 from mmsearch import config
 from mmsearch.db import ensure_fts_index, open_table, upsert
 from mmsearch.schema import ARROW_SCHEMA, Modality, Row, TextSource
@@ -40,6 +41,52 @@ def test_open_table_is_idempotent(tmp_path):
     table2 = open_table(uri=tmp_path)  # re-open, should not recreate/wipe
 
     assert table2.count_rows() == 1
+
+
+# --- open_table: create_if_missing / storage_options (R2 support) --------------------------
+
+def test_open_table_create_if_missing_false_raises_when_table_absent(tmp_path):
+    with pytest.raises(RuntimeError, match="chunks"):
+        open_table(uri=tmp_path, create_if_missing=False)
+
+
+def test_open_table_create_if_missing_false_still_opens_existing_table(tmp_path):
+    open_table(uri=tmp_path)  # first call creates it
+
+    table = open_table(uri=tmp_path, create_if_missing=False)  # must not raise
+
+    assert table.count_rows() == 0
+
+
+def test_open_table_forwards_storage_options_to_connect(tmp_path, monkeypatch):
+    captured = {}
+    real_connect = db_module.lancedb.connect
+
+    def spy_connect(uri, *, storage_options=None, **kwargs):
+        captured["uri"] = uri
+        captured["storage_options"] = storage_options
+        return real_connect(uri, storage_options=storage_options, **kwargs)
+
+    monkeypatch.setattr(db_module.lancedb, "connect", spy_connect)
+
+    open_table(uri=tmp_path, storage_options={"aws_access_key_id": "k"})
+
+    assert captured["storage_options"] == {"aws_access_key_id": "k"}
+
+
+def test_open_table_storage_options_defaults_to_none(tmp_path, monkeypatch):
+    captured = {}
+    real_connect = db_module.lancedb.connect
+
+    def spy_connect(uri, *, storage_options=None, **kwargs):
+        captured["storage_options"] = storage_options
+        return real_connect(uri, storage_options=storage_options, **kwargs)
+
+    monkeypatch.setattr(db_module.lancedb, "connect", spy_connect)
+
+    open_table(uri=tmp_path)
+
+    assert captured["storage_options"] is None
 
 
 # --- upsert -----------------------------------------------------------------------------

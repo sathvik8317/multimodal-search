@@ -159,6 +159,101 @@ def test_allowed_origins_parses_comma_separated_env_string(monkeypatch):
     assert settings.allowed_origins == ["http://a.test", "http://b.test"]
 
 
+# --- LanceDB URI + R2 storage creds (upload feature) ------------------------------------------
+
+def test_lancedb_uri_defaults_to_none(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.delenv("MMSEARCH_LANCEDB_URI", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.lancedb_uri is None
+
+
+def test_reads_lancedb_uri_from_mmsearch_prefixed_env_var(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.setenv("MMSEARCH_LANCEDB_URI", "s3://bucket/lancedb")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.lancedb_uri == "s3://bucket/lancedb"
+
+
+def test_aws_creds_default_to_none(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    for var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL", "AWS_REGION"):
+        monkeypatch.delenv(var, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.aws_access_key_id is None
+    assert settings.aws_secret_access_key is None
+    assert settings.aws_endpoint_url is None
+    assert settings.aws_region is None
+
+
+def test_reads_aws_creds_from_unprefixed_env_vars(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "key-id")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret-key")
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "https://accountid.r2.cloudflarestorage.com")
+    monkeypatch.setenv("AWS_REGION", "auto")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.aws_access_key_id == "key-id"
+    assert settings.aws_secret_access_key == "secret-key"
+    assert settings.aws_endpoint_url == "https://accountid.r2.cloudflarestorage.com"
+    assert settings.aws_region == "auto"
+
+
+# --- r2_storage_options() --------------------------------------------------------------------
+
+def test_r2_bucket_defaults_to_none(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.delenv("MMSEARCH_R2_BUCKET", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.r2_bucket is None
+
+
+def test_reads_r2_bucket_from_mmsearch_prefixed_env_var(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.setenv("MMSEARCH_R2_BUCKET", "mm-uploads")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.r2_bucket == "mm-uploads"
+
+
+def test_r2_storage_options_is_none_when_no_creds_configured(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    for var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL", "AWS_REGION"):
+        monkeypatch.delenv(var, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.r2_storage_options() is None
+
+
+def test_r2_storage_options_builds_dict_when_creds_configured(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "key-id")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret-key")
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "https://accountid.r2.cloudflarestorage.com")
+    monkeypatch.setenv("AWS_REGION", "auto")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.r2_storage_options() == {
+        "aws_access_key_id": "key-id",
+        "aws_secret_access_key": "secret-key",
+        "aws_endpoint": "https://accountid.r2.cloudflarestorage.com",
+        "aws_region": "auto",
+    }
+
+
 # --- rate limit knobs -----------------------------------------------------------------------
 
 def test_rate_limit_knobs_have_sane_positive_defaults(monkeypatch):

@@ -19,6 +19,11 @@ COHERE_EMBED_DIM = 1536
 OPENAI_EMBED_MODEL = "text-embedding-3-small"
 OPENAI_EMBED_DIM = 1536
 
+# OpenAI vision model for ApiCaptioner (clients/captioner_api.py): captions
+# uploaded diagrams/scanned pages on the deployed server, which has no
+# GPU/torch for the local moondream2 captioner. Local ingestion is unaffected.
+OPENAI_VISION_MODEL = "gpt-4o-mini"
+
 RERANK_MODEL = "rerank-v3.5"
 
 # Retrieval funnel: fetch N per retriever -> RRF fuse -> rerank shortlist M -> return top-k.
