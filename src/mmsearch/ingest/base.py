@@ -1,11 +1,5 @@
 """Corpus walker: recurses a directory, dispatches files by extension to the
 per-modality ingesters, and writes the resulting rows to LanceDB.
-
-Extension routing reflects what the ingesters actually support today, not
-PLAN.md's aspirational scope: ingest_table only parses CSV (xlsx was
-deliberately deprioritized during Phase 1), so .xlsx files are treated as
-unsupported and recorded in IngestStats.skipped rather than silently
-mis-ingested or crashing the run.
 """
 
 from __future__ import annotations
@@ -32,7 +26,7 @@ def classify_file(path: Path) -> str | None:
         return "pdf"
     if suffix in _DIAGRAM_EXTENSIONS:
         return "diagram"
-    if suffix == ".csv":
+    if suffix in (".csv", ".xlsx"):
         return "table"
     if suffix == ".py":
         return "code"
