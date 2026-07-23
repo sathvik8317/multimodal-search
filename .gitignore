@@ -5,8 +5,21 @@ __pycache__/
 .coverage
 htmlcov/
 
-# LanceDB data, thumbnails, caption cache -- generated at ingest time, not source
-/data/
+# LanceDB index + thumbnails are committed: they are the deployed read-only
+# artifact (see DEPLOYMENT_PLAN.md), rebuilt only by a local `mmsearch ingest`
+# followed by scripts/rebuild_lancedb_for_commit.py. caption_cache and any local
+# backup dirs (e.g. lancedb_full_backup_113rows) stay out -- not deployed state.
+/data/*
+!/data/lancedb/
+!/data/thumbnails/
+# Page rasters of the two PDFs corpus/README.md excludes for redistribution
+# reasons (arXiv license: hosting rights granted to arXiv, not third parties).
+# ResultCard.tsx falls back to a placeholder icon via its existing onError
+# handler. The matching LanceDB rows are excluded by
+# scripts/rebuild_lancedb_for_commit.py, not by gitignore -- they live inside
+# chunks.lance's data files, not as loose files.
+/data/thumbnails/specs/2106.09685v2.pdf#*
+/data/thumbnails/specs/NIPS-2017-attention-is-all-you-need-Paper.pdf#*
 
 # Vite build output -- regenerate with `npm install && npm run build` in frontend/.
 # The tracked .gitkeep is load-bearing, not cosmetic: StaticFiles(directory=...)

@@ -28,7 +28,7 @@ export function getApiKey(): string {
 
 export function setApiKey(key: string): void {
   localStorage.setItem(API_KEY_STORAGE_KEY, key);
-  document.cookie = `mm_api_key=${encodeURIComponent(key)}; path=/; SameSite=Strict`;
+  document.cookie = `mm_api_key=${encodeURIComponent(key)}; path=/; SameSite=Strict; Secure`;
 }
 
 /** Thrown for a 401 specifically, so callers can prompt for a key instead of

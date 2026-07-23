@@ -112,6 +112,17 @@ To iterate on the UI itself, run Vite's dev server alongside uvicorn. It proxies
 cd frontend && npm run dev      # http://127.0.0.1:5173
 ```
 
+## Deployment
+
+Deployed to Render as a read-only query service over the already-ingested
+index -- ingestion stays local, where the API spend and (optionally) the GPU
+already are. `data/lancedb` and `data/thumbnails` are committed to the repo
+rather than kept on a persistent disk: they're a 9.8 MB build artifact, not
+mutable state, and nothing on the query path writes to them. Full rationale,
+the Render build/start commands, environment variables, cost breakdown, and
+the security posture changes that come with being genuinely public are in
+[`DEPLOYMENT_PLAN.md`](DEPLOYMENT_PLAN.md).
+
 ## Eval results
 
 Hit-rate@5 against 25 hand-written labels

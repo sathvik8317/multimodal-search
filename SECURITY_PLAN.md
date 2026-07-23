@@ -1,5 +1,12 @@
 # Security hardening pass — multimodal-search
 
+> **Post-deployment note:** this plan's opening premise ("local-only, single-user
+> demo... not deployed") no longer holds — the service is deployed to Render. The
+> four items below still hold up (the API-key gate does real work publicly, TLS
+> arrives free from Render), but "one shared secret" now describes a group with no
+> per-recipient revocation, not a person, and a leaked key has a real metered-spend
+> blast radius. See `DEPLOYMENT_PLAN.md` §6 for the full public-reachability review.
+
 ## Context
 
 This is a local-only, single-user demo. It is not deployed and this plan does not
