@@ -2,7 +2,13 @@ import { useRef, useState, type FormEvent } from "react";
 import { uploadFile, UnauthorizedError, type UploadResponse } from "../api";
 import { MODALITY_LABEL } from "../modality";
 
-type UploadStatus = "idle" | "uploading" | "done" | "error";
+type Phase = "idle" | "uploading" | "done";
+
+interface FileOutcome {
+  filename: string;
+  ok: boolean;
+  detail: string;
+}
 
 const ACCEPTED_EXTENSIONS =
   ".pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp,.csv,.xlsx,.py";
@@ -11,37 +17,60 @@ interface UploadPanelProps {
   onUnauthorized: () => void;
 }
 
+function describe(response: UploadResponse): string {
+  return `${MODALITY_LABEL[response.modality]} (${response.rows_written} chunk${
+    response.rows_written === 1 ? "" : "s"
+  })`;
+}
+
 export function UploadPanel({ onUnauthorized }: UploadPanelProps) {
-  const [status, setStatus] = useState<UploadStatus>("idle");
-  const [result, setResult] = useState<UploadResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [total, setTotal] = useState(0);
+  const [completed, setCompleted] = useState(0);
+  const [currentFilename, setCurrentFilename] = useState<string | null>(null);
+  const [outcomes, setOutcomes] = useState<FileOutcome[]>([]);
   const [uploaderName, setUploaderName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) return;
+    const files = fileInputRef.current?.files;
+    if (!files || files.length === 0) return;
 
-    setStatus("uploading");
-    setError(null);
-    setResult(null);
+    setPhase("uploading");
+    setTotal(files.length);
+    setCompleted(0);
+    setOutcomes([]);
 
-    try {
-      const response = await uploadFile(file, uploaderName);
-      setResult(response);
-      setStatus("done");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      if (err instanceof UnauthorizedError) {
-        onUnauthorized();
-        setStatus("idle");
-        return;
+    const results: FileOutcome[] = [];
+
+    for (const file of Array.from(files)) {
+      setCurrentFilename(file.name);
+      try {
+        const response = await uploadFile(file, uploaderName);
+        results.push({ filename: file.name, ok: true, detail: describe(response) });
+      } catch (err) {
+        if (err instanceof UnauthorizedError) {
+          onUnauthorized();
+          setPhase("idle");
+          return;
+        }
+        results.push({
+          filename: file.name,
+          ok: false,
+          detail: err instanceof Error ? err.message : "Upload failed.",
+        });
       }
-      setError(err instanceof Error ? err.message : "Upload failed.");
-      setStatus("error");
+      setCompleted((n) => n + 1);
+      setOutcomes([...results]);
     }
+
+    setCurrentFilename(null);
+    setPhase("done");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
+
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
     <form
@@ -49,9 +78,9 @@ export function UploadPanel({ onUnauthorized }: UploadPanelProps) {
       className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4"
     >
       <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-fg">Add a file to the index</h2>
+        <h2 className="text-sm font-medium text-fg">Add files to the index</h2>
         <p className="text-xs text-fg-muted">
-          PDF, image, code (.py), CSV, or Excel (.xlsx).
+          PDF, image, code (.py), CSV, or Excel (.xlsx). Select multiple files at once.
         </p>
       </div>
 
@@ -59,8 +88,9 @@ export function UploadPanel({ onUnauthorized }: UploadPanelProps) {
         <input
           ref={fileInputRef}
           type="file"
+          multiple
           accept={ACCEPTED_EXTENSIONS}
-          aria-label="File to upload"
+          aria-label="Files to upload"
           className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent-fg"
         />
         <input
@@ -73,24 +103,49 @@ export function UploadPanel({ onUnauthorized }: UploadPanelProps) {
         />
         <button
           type="submit"
-          disabled={status === "uploading"}
+          disabled={phase === "uploading"}
           className="cursor-pointer rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-opacity duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {status === "uploading" ? "Uploading…" : "Upload"}
+          {phase === "uploading" ? "Uploading…" : "Upload"}
         </button>
       </div>
 
-      {status === "done" && result && (
-        <p className="text-xs text-fg-muted" role="status">
-          Added <span className="font-medium text-fg">{result.filename}</span>{" "}
-          as {MODALITY_LABEL[result.modality]} ({result.rows_written} chunk
-          {result.rows_written === 1 ? "" : "s"}).
-        </p>
+      {phase === "uploading" && (
+        <div className="flex flex-col gap-1.5" role="status" aria-live="polite">
+          <div className="flex items-center justify-between text-xs text-fg-muted">
+            <span>
+              {completed} of {total} uploaded
+              {currentFilename ? ` — ${currentFilename}…` : ""}
+            </span>
+            <span>{percent}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-200"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
       )}
-      {status === "error" && (
-        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
-          {error}
-        </p>
+
+      {phase === "done" && outcomes.length > 0 && (
+        <ul className="flex flex-col gap-1 text-xs">
+          {outcomes.map((outcome, index) => (
+            <li
+              key={`${outcome.filename}-${index}`}
+              role={outcome.ok ? "status" : "alert"}
+              className={
+                outcome.ok
+                  ? "text-fg-muted"
+                  : "text-red-600 dark:text-red-400"
+              }
+            >
+              <span className="font-medium text-fg">{outcome.filename}</span>
+              {outcome.ok ? " — added as " : " — failed: "}
+              {outcome.detail}
+            </li>
+          ))}
+        </ul>
       )}
     </form>
   );
