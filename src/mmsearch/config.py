@@ -51,17 +51,17 @@ TOP_K = 5
 # or 3. See EMBEDDING_MIGRATION_PLAN.md for the full per-query diff.
 RRF_K = 20
 
-# Minimum SearchResult.score a result must reach to be returned. 0.0 is a
-# no-op -- every real score (Cohere Rerank's relevance_score, and the
-# RRF-fallback positional score 1/(rank+1) used by vector-only/rrf-only/a
-# failed-or-absent reranker) is non-negative, so nothing is filtered at the
-# default. Note the two scoring regimes mean different things: relevance_score
-# is a genuine confidence signal, while 1/(rank+1) is purely positional (the
-# top result always scores 1.0 regardless of actual relevance) -- so a
-# nonzero threshold behaves as a quality filter in rerank mode but as an
-# effective top-N position cap in the RRF-fallback modes. See
-# retrieve/pipeline.py's build_search_fn docstring.
-MIN_SCORE_THRESHOLD = 0.0
+# Minimum SearchResult.score a result must reach to be returned. Note the two
+# scoring regimes mean different things: Cohere Rerank's relevance_score is a
+# genuine confidence signal, while the RRF-fallback positional score
+# 1/(rank+1) (used by vector-only/rrf-only/a failed-or-absent reranker) is
+# purely positional -- the top result always scores 1.0 regardless of actual
+# relevance -- so this same threshold behaves as a quality filter in rerank
+# mode but as an effective top-N position cap in the RRF-fallback modes. See
+# retrieve/pipeline.py's build_search_fn docstring. This is the fallback
+# default; Settings.min_score_threshold (MMSEARCH_MIN_SCORE_THRESHOLD) can
+# override it per-deployment without a code change.
+MIN_SCORE_THRESHOLD = 0.3
 
 # Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
 # input limits or produce a semantically useless single-vector embedding.

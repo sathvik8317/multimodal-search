@@ -54,11 +54,10 @@ def test_max_table_embed_chars_is_a_positive_int_under_the_row_cap_estimate():
     assert config.MAX_TABLE_EMBED_CHARS > 0
 
 
-def test_min_score_threshold_defaults_to_zero():
-    # 0.0 is a no-op filter: every real score (Cohere relevance_score, the
-    # RRF-fallback positional score 1/(rank+1)) is non-negative, so the
-    # default must not change existing /search behavior.
-    assert config.MIN_SCORE_THRESHOLD == 0.0
+def test_min_score_threshold_fallback_default():
+    # The code-level fallback used when Settings.min_score_threshold isn't
+    # overridden via MMSEARCH_MIN_SCORE_THRESHOLD (see settings.py).
+    assert config.MIN_SCORE_THRESHOLD == 0.3
 
 
 def test_max_table_embed_chars_matches_calibrated_safe_value():

@@ -265,6 +265,28 @@ def test_rate_limit_knobs_have_sane_positive_defaults(monkeypatch):
     assert settings.rate_limit_window > 0
 
 
+# --- min_score_threshold ---------------------------------------------------------------------
+
+def test_min_score_threshold_defaults_to_config_value(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.delenv("MMSEARCH_MIN_SCORE_THRESHOLD", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    from mmsearch import config
+
+    assert settings.min_score_threshold == config.MIN_SCORE_THRESHOLD
+
+
+def test_reads_min_score_threshold_from_mmsearch_prefixed_env_var(monkeypatch):
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+    monkeypatch.setenv("MMSEARCH_MIN_SCORE_THRESHOLD", "0.5")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.min_score_threshold == 0.5
+
+
 def test_upload_rate_limit_max_default_accommodates_multi_file_batches(monkeypatch):
     # A batch upload from the frontend sends one request per file
     # sequentially; the default budget must clear a reasonably large batch

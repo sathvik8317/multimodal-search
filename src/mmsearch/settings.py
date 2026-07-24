@@ -18,6 +18,8 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from mmsearch import config
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MMSEARCH_", env_file=".env", extra="ignore")
@@ -50,6 +52,10 @@ class Settings(BaseSettings):
     upload_rate_limit_window: float = 60.0
     # Declared for future use; only "dev" has behavior attached (see get_settings).
     env: Literal["dev", "staging", "prod"] = "dev"
+    # Overrides config.MIN_SCORE_THRESHOLD per-deployment without a code
+    # change. See config.py and retrieve/pipeline.py's build_search_fn
+    # docstring for what this value means for each scoring mode.
+    min_score_threshold: float = config.MIN_SCORE_THRESHOLD
 
     # None means "use the local config.LANCEDB_URI path" (db.open_table's
     # default). Set to an s3://bucket/... URI to point at Cloudflare R2.

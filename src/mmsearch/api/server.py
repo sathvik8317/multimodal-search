@@ -33,7 +33,12 @@ _table = db.open_table(
 _cohere_client = CohereClient()
 _openai_client = OpenAIClient()
 _search_fn = build_search_fn(
-    _table, _cohere_client, _openai_client, _cohere_client, mode="rrf+rerank"
+    _table,
+    _cohere_client,
+    _openai_client,
+    _cohere_client,
+    mode="rrf+rerank",
+    min_score_threshold=_settings.min_score_threshold,
 )
 
 # Uploaded-file thumbnails only; the curated corpus's thumbnails always stay
