@@ -35,6 +35,7 @@ export default defineConfig({
       "/search": BACKEND,
       "/thumbnails": BACKEND,
       "/healthz": BACKEND,
+      "/upload": BACKEND,
     },
   },
 });

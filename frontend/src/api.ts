@@ -1,5 +1,12 @@
 import type { Modality, TextSource } from "./modality";
 
+export interface UploadResponse {
+  status: string;
+  filename: string;
+  modality: Modality;
+  rows_written: number;
+}
+
 /**
  * Mirrors the `SearchResult` dataclass in src/mmsearch/retrieve/types.py.
  * Field names and types must stay in step with it.
@@ -60,4 +67,33 @@ export async function search(
     throw new Error(`Search failed (${response.status})`);
   }
   return (await response.json()) as SearchResult[];
+}
+
+/** Same relative-URL, same-origin rationale as search() above. */
+export async function uploadFile(
+  file: File,
+  uploader: string,
+  signal?: AbortSignal,
+): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (uploader.trim() !== "") {
+    formData.append("uploader", uploader.trim());
+  }
+
+  const response = await fetch("/upload", {
+    method: "POST",
+    headers: { "X-API-Key": getApiKey() },
+    body: formData,
+    signal,
+  });
+
+  if (response.status === 401) {
+    throw new UnauthorizedError();
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `Upload failed (${response.status})`);
+  }
+  return (await response.json()) as UploadResponse;
 }
