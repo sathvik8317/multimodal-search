@@ -261,6 +261,84 @@ def test_one_embedder_failing_does_not_raise_in_vector_only_mode(table):
     assert len(results) > 0
 
 
+# --- min_score_threshold -----------------------------------------------------------------------
+
+def test_default_threshold_matches_config_and_is_a_noop(table):
+    # Omitting min_score_threshold must behave identically to passing
+    # config.MIN_SCORE_THRESHOLD explicitly -- that's the whole point of a
+    # "safe default" for a parameter that wires straight into config.py.
+    default_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank")
+    explicit_fn = build_search_fn(
+        table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank",
+        min_score_threshold=config.MIN_SCORE_THRESHOLD,
+    )
+
+    default_results = default_fn("auth token flow diagram", k=3)
+    explicit_results = explicit_fn("auth token flow diagram", k=3)
+
+    assert [r.id for r in default_results] == [r.id for r in explicit_results]
+    assert len(default_results) > 0
+
+
+def test_threshold_filters_out_low_scoring_positional_results(table):
+    # rrf-only mode never reranks, so scores are purely positional
+    # (1/(rank+1)): rank0=1.0, rank1=0.5, rank2=0.333... A 0.4 threshold
+    # keeps only the top two positions.
+    search_fn = build_search_fn(
+        table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="rrf-only",
+        min_score_threshold=0.4,
+    )
+
+    results = search_fn("auth token flow diagram", k=5)
+
+    assert len(results) <= 2
+    for result in results:
+        assert result.score >= 0.4
+
+
+def test_threshold_returns_empty_list_when_no_result_exceeds_it(table):
+    # No real score (positional or Cohere relevance_score) ever reaches 2.0.
+    search_fn = build_search_fn(
+        table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank",
+        min_score_threshold=2.0,
+    )
+
+    results = search_fn("auth token flow diagram", k=5)
+
+    assert results == []
+
+
+def test_threshold_applies_to_reranked_relevance_scores(table):
+    # FakeReranker scores by query/document token overlap ratio (see
+    # clients/fakes.py) -- a query sharing zero tokens with a document
+    # scores exactly 0.0. Any positive threshold must drop it.
+    search_fn = build_search_fn(
+        table, COHERE_EMBEDDER, OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank",
+        min_score_threshold=0.01,
+    )
+
+    results = search_fn("auth token flow diagram", k=5)
+
+    for result in results:
+        assert result.score >= 0.01
+
+
+def test_threshold_does_not_apply_when_vector_only_mode_raises_503(table):
+    # The 503 path (both embedders down, see Bug 1 fix) fires before any
+    # result list -- or threshold filtering -- exists, so this must still
+    # raise regardless of min_score_threshold.
+    from fastapi import HTTPException
+
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), RaisingEmbeddingClient(), FakeReranker(), mode="vector-only",
+        min_score_threshold=0.0,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        search_fn("auth token flow diagram", k=3)
+    assert exc_info.value.status_code == 503
+
+
 # --- snippet construction (modality-aware) ---------------------------------------------------
 
 def _table_row(content_text: str) -> dict:

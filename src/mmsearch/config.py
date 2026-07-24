@@ -51,6 +51,18 @@ TOP_K = 5
 # or 3. See EMBEDDING_MIGRATION_PLAN.md for the full per-query diff.
 RRF_K = 20
 
+# Minimum SearchResult.score a result must reach to be returned. 0.0 is a
+# no-op -- every real score (Cohere Rerank's relevance_score, and the
+# RRF-fallback positional score 1/(rank+1) used by vector-only/rrf-only/a
+# failed-or-absent reranker) is non-negative, so nothing is filtered at the
+# default. Note the two scoring regimes mean different things: relevance_score
+# is a genuine confidence signal, while 1/(rank+1) is purely positional (the
+# top result always scores 1.0 regardless of actual relevance) -- so a
+# nonzero threshold behaves as a quality filter in rerank mode but as an
+# effective top-N position cap in the RRF-fallback modes. See
+# retrieve/pipeline.py's build_search_fn docstring.
+MIN_SCORE_THRESHOLD = 0.0
+
 # Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
 # input limits or produce a semantically useless single-vector embedding.
 # The full row count is still recorded in Row.metadata (truncated/total_rows).

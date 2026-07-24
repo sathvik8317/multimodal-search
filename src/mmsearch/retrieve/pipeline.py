@@ -8,6 +8,10 @@ Scoring convention (documented since Phase-0 doesn't dictate one):
     final returned order, so scores are always descending and comparable
     within a single response, even though they aren't comparable across
     modes or across separate calls.
+
+`min_score_threshold` (config.MIN_SCORE_THRESHOLD, default 0.0) is applied
+uniformly across both scoring regimes above -- see build_search_fn's
+docstring for what that means in practice for each.
 """
 
 from __future__ import annotations
@@ -76,6 +80,15 @@ def _positional_results(ids: list[str], id_to_row: dict[str, dict]) -> list[Sear
     ]
 
 
+def _above_threshold(results: list[SearchResult], threshold: float) -> list[SearchResult]:
+    """Drop any result scoring below threshold -- low-confidence noise is
+    worse than an honest empty list. `>=`, not `>`: with the default 0.0,
+    every real score (Cohere relevance_score, and the RRF-fallback
+    1/(rank+1)) is non-negative, so nothing is filtered unless a caller
+    explicitly raises the threshold above 0."""
+    return [result for result in results if result.score >= threshold]
+
+
 def _safe_embed_query(embedder: EmbeddingClient, query: str, provider: str) -> list[float] | None:
     """embed_query, but a provider outage must never surface as a 500 -- same
     graceful-degradation policy as the reranker fallback below: drop this
@@ -99,11 +112,21 @@ def build_search_fn(
     fetch_n: int = config.FETCH_N,
     rerank_m: int = config.RERANK_M,
     rrf_k: int = config.RRF_K,
+    min_score_threshold: float = config.MIN_SCORE_THRESHOLD,
 ) -> SearchFn:
     """Two vector retrievers (Cohere image-space, OpenAI text-space) + FTS,
     fused by three-way RRF, optionally reranked. See
     EMBEDDING_MIGRATION_PLAN.md: a query vector from one provider is only ever
     compared against that same provider's column -- never mixed.
+
+    min_score_threshold filters the final result list before it's returned:
+    a result scoring below it is dropped, and if nothing clears it the
+    response is an empty list rather than low-confidence noise. Because the
+    two scoring regimes mean different things (see module docstring), the
+    same threshold value behaves differently by mode: in rerank mode it's a
+    genuine relevance-quality filter; in vector-only/rrf-only/a
+    failed-or-absent reranker, scores are positional (1/(rank+1)), so a
+    nonzero threshold acts as an effective top-N position cap instead.
     """
     if mode not in _VALID_MODES:
         raise ValueError(f"unknown mode: {mode!r}; expected one of {_VALID_MODES}")
@@ -144,7 +167,7 @@ def build_search_fn(
 
         if mode == "vector-only":
             fused_ids = reciprocal_rank_fusion([cohere_ids, openai_ids], k=rrf_k)
-            return _positional_results(fused_ids[:k], id_to_row)
+            return _above_threshold(_positional_results(fused_ids[:k], id_to_row), min_score_threshold)
 
         fts_hits = table.search(query, query_type="fts").limit(fetch_n).to_list()
         id_to_row.update({row["id"]: row for row in fts_hits})
@@ -153,11 +176,11 @@ def build_search_fn(
         fused_ids = reciprocal_rank_fusion([cohere_ids, openai_ids, fts_ids], k=rrf_k)
 
         if mode == "rrf-only":
-            return _positional_results(fused_ids[:k], id_to_row)
+            return _above_threshold(_positional_results(fused_ids[:k], id_to_row), min_score_threshold)
 
         # mode == "rrf+rerank"
         if reranker is None:
-            return _positional_results(fused_ids[:k], id_to_row)
+            return _above_threshold(_positional_results(fused_ids[:k], id_to_row), min_score_threshold)
 
         shortlist_ids = fused_ids[:rerank_m]
         shortlist_docs = [id_to_row[id_]["content_text"] for id_ in shortlist_ids]
@@ -167,11 +190,12 @@ def build_search_fn(
             logger.warning(
                 "reranker.rerank failed; falling back to RRF-fused order", exc_info=True
             )
-            return _positional_results(fused_ids[:k], id_to_row)
+            return _above_threshold(_positional_results(fused_ids[:k], id_to_row), min_score_threshold)
 
-        return [
+        reranked_results = [
             _row_to_result(id_to_row[shortlist_ids[rr.index]], score=rr.relevance_score)
             for rr in rerank_results
         ]
+        return _above_threshold(reranked_results, min_score_threshold)
 
     return search
