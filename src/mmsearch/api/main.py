@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 from dataclasses import asdict
 from pathlib import Path
@@ -20,6 +21,8 @@ from mmsearch.ingest.upload import UnsupportedUploadError, ingest_uploaded_file
 from mmsearch.ingest.validation import UploadValidationError
 from mmsearch.retrieve.types import SearchFn
 from mmsearch.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -155,7 +158,13 @@ def create_app(
             except (UnsupportedUploadError, UploadValidationError) as exc:
                 raise HTTPException(status_code=415, detail=str(exc)) from exc
             except Exception as exc:  # noqa: BLE001 -- a bad upload must not 500 the server
-                raise HTTPException(status_code=422, detail=f"ingest failed: {exc}") from exc
+                # The real error (e.g. a provider SDK exception) can carry
+                # request headers, trace IDs, or support links -- log it in
+                # full server-side, but never forward it to the browser.
+                logger.warning("ingest_uploaded_file failed", exc_info=True)
+                raise HTTPException(
+                    status_code=422, detail="ingest failed, please try again shortly"
+                ) from exc
 
             if upload_thumbnail_storage is not None:
                 for ref in result.thumbnail_refs:

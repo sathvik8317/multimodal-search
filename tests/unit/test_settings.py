@@ -265,6 +265,17 @@ def test_rate_limit_knobs_have_sane_positive_defaults(monkeypatch):
     assert settings.rate_limit_window > 0
 
 
+def test_upload_rate_limit_max_default_accommodates_multi_file_batches(monkeypatch):
+    # A batch upload from the frontend sends one request per file
+    # sequentially; the default budget must clear a reasonably large batch
+    # (e.g. 7 files) without tripping 429s mid-batch.
+    monkeypatch.setenv("MMSEARCH_API_KEY", "secret123")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.upload_rate_limit_max == 20
+
+
 # --- get_settings caching --------------------------------------------------------------------
 
 def test_get_settings_is_cached(monkeypatch):

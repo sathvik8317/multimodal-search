@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 
+from fastapi import HTTPException
+
 from mmsearch import config
 from mmsearch.clients.protocols import EmbeddingClient, Reranker
 from mmsearch.retrieve.fusion import reciprocal_rank_fusion
@@ -74,6 +76,19 @@ def _positional_results(ids: list[str], id_to_row: dict[str, dict]) -> list[Sear
     ]
 
 
+def _safe_embed_query(embedder: EmbeddingClient, query: str, provider: str) -> list[float] | None:
+    """embed_query, but a provider outage must never surface as a 500 -- same
+    graceful-degradation policy as the reranker fallback below: drop this
+    retriever from RRF instead of failing the whole request."""
+    try:
+        return embedder.embed_query(query)
+    except Exception:
+        logger.warning(
+            "%s embedder.embed_query failed; dropping it from retrieval", provider, exc_info=True
+        )
+        return None
+
+
 def build_search_fn(
     table,
     cohere_embedder: EmbeddingClient,
@@ -96,17 +111,29 @@ def build_search_fn(
     def search(query: str, k: int = config.TOP_K) -> list[SearchResult]:
         # ponytail: sequential query embeds (2 network calls); wrap in
         # ThreadPool(2) if search latency matters.
-        cohere_query_vector = cohere_embedder.embed_query(query)
-        openai_query_vector = openai_embedder.embed_query(query)
+        cohere_query_vector = _safe_embed_query(cohere_embedder, query, "cohere")
+        openai_query_vector = _safe_embed_query(openai_embedder, query, "openai")
+
+        if mode == "vector-only" and cohere_query_vector is None and openai_query_vector is None:
+            # No FTS fallback in this mode -- an empty result list here would
+            # look like "no matches" instead of "the search backend is down".
+            raise HTTPException(
+                status_code=503, detail="search unavailable: both embedders failed"
+            )
+
         cohere_hits = (
             table.search(cohere_query_vector, query_type="vector", vector_column_name="vector_cohere")
             .limit(fetch_n)
             .to_list()
+            if cohere_query_vector is not None
+            else []
         )
         openai_hits = (
             table.search(openai_query_vector, query_type="vector", vector_column_name="vector_openai")
             .limit(fetch_n)
             .to_list()
+            if openai_query_vector is not None
+            else []
         )
 
         id_to_row = {row["id"]: row for row in cohere_hits}

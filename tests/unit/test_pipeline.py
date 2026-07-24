@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 
 from mmsearch import config
 from mmsearch.clients.fakes import FakeEmbeddingClient, FakeReranker
@@ -64,6 +65,14 @@ class RaisingReranker:
 class NeverCallReranker:
     def rerank(self, query, documents, top_n):
         raise AssertionError("reranker should not be called in this mode")
+
+
+class RaisingEmbeddingClient:
+    def embed_query(self, text):
+        raise RuntimeError("embedder is down")
+
+    def embed_documents(self, items):
+        raise RuntimeError("embedder is down")
 
 
 class RecordingRetrieverTable:
@@ -162,6 +171,94 @@ def test_rrf_only_calls_both_vector_retrievers_and_fts_but_never_reranker(table,
     assert "fts" in query_types
     assert vector_columns == {"vector_cohere", "vector_openai"}
     assert 0 < len(results) <= 3
+
+
+# --- embedder failure handling (Bug 1) --------------------------------------------------------
+#
+# Mirrors the reranker fallback pattern above: a failing retriever must never
+# surface a 500 -- it's dropped from RRF instead. Only vector-only mode has
+# nothing left to fall back to when BOTH embedders fail (no FTS call in that
+# mode), so that specific case raises a clean 503 instead of silently
+# returning an empty list.
+
+def test_cohere_embedder_failure_falls_back_to_openai_only(table):
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank"
+    )
+
+    results = search_fn("auth token flow diagram", k=3)  # must not raise
+
+    assert len(results) > 0
+
+
+def test_openai_embedder_failure_falls_back_to_cohere_only(table):
+    search_fn = build_search_fn(
+        table, COHERE_EMBEDDER, RaisingEmbeddingClient(), FakeReranker(), mode="rrf+rerank"
+    )
+
+    results = search_fn("auth token flow diagram", k=3)  # must not raise
+
+    assert len(results) > 0
+
+
+def test_cohere_embedder_failure_skips_the_cohere_vector_search_call(table, monkeypatch):
+    original_search = type(table).search
+    calls = []
+
+    def spy_search(self, query, query_type=None, *args, **kwargs):
+        calls.append((query_type, kwargs.get("vector_column_name")))
+        return original_search(self, query, query_type=query_type, *args, **kwargs)
+
+    monkeypatch.setattr(type(table), "search", spy_search)
+
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), OPENAI_EMBEDDER, FakeReranker(), mode="rrf+rerank"
+    )
+    search_fn("auth token flow diagram", k=3)
+
+    vector_columns = {c[1] for c in calls if c[0] == "vector"}
+    assert vector_columns == {"vector_openai"}  # vector_cohere never attempted
+
+
+def test_both_embedders_fail_in_vector_only_mode_raises_503(table):
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), RaisingEmbeddingClient(), FakeReranker(), mode="vector-only"
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        search_fn("auth token flow diagram", k=3)
+    assert exc_info.value.status_code == 503
+
+
+def test_both_embedders_fail_in_rrf_only_mode_falls_back_to_fts_only(table):
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), RaisingEmbeddingClient(), NeverCallReranker(), mode="rrf-only"
+    )
+
+    # Must not raise -- FTS still runs even though both vector retrievers failed.
+    results = search_fn("auth token flow diagram", k=3)
+
+    assert len(results) > 0
+
+
+def test_both_embedders_fail_in_rrf_rerank_mode_falls_back_to_fts_only(table):
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), RaisingEmbeddingClient(), FakeReranker(), mode="rrf+rerank"
+    )
+
+    results = search_fn("auth token flow diagram", k=3)  # must not raise
+
+    assert len(results) > 0
+
+
+def test_one_embedder_failing_does_not_raise_in_vector_only_mode(table):
+    search_fn = build_search_fn(
+        table, RaisingEmbeddingClient(), OPENAI_EMBEDDER, FakeReranker(), mode="vector-only"
+    )
+
+    results = search_fn("auth token flow diagram", k=3)  # must not raise, must not 503
+
+    assert len(results) > 0
 
 
 # --- snippet construction (modality-aware) ---------------------------------------------------

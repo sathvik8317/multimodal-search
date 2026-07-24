@@ -453,6 +453,43 @@ def test_upload_pushes_new_thumbnail_to_configured_r2_storage(tmp_path):
     assert data == buf.getvalue()
 
 
+def test_upload_ingest_failure_returns_generic_message_but_logs_the_real_error(tmp_path, caplog):
+    import io
+    import logging
+
+    from PIL import Image
+
+    class _RaisingCaptioner:
+        def caption(self, image_bytes: bytes) -> str:
+            raise RuntimeError(
+                "Cohere API error 500: trace_id=abc-123-xyz, "
+                "headers={'x-request-id': 'req-9'}, see https://support.cohere.com/errors"
+            )
+
+    app = _upload_app(tmp_path, upload_captioner=_RaisingCaptioner())
+    client = TestClient(app)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), "white").save(buf, format="PNG")
+
+    with caplog.at_level(logging.WARNING):
+        response = client.post(
+            "/upload",
+            files={"file": ("diagram.png", buf.getvalue())},
+            headers={"X-API-Key": TEST_API_KEY},
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["detail"] == "ingest failed, please try again shortly"
+    assert "trace_id" not in body["detail"]
+    assert "Cohere API error" not in body["detail"]
+    assert "support.cohere.com" not in body["detail"]
+
+    # the real error must not be lost -- it's in server logs, just not the response
+    assert "trace_id=abc-123-xyz" in caplog.text
+
+
 def test_upload_refreshes_table_so_search_sees_new_rows_immediately(tmp_path):
     class _CheckoutSpyTable:
         def __init__(self, real_table):

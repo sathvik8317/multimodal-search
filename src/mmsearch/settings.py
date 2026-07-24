@@ -42,8 +42,11 @@ class Settings(BaseSettings):
     rate_limit_window: float = 60.0
     # Upload-specific limit, deliberately separate from rate_limit_max/window
     # (see api/deps.py) -- ingestion is far more expensive per request than a
-    # search, so it gets its own, stricter budget.
-    upload_rate_limit_max: int = 5
+    # search, so it gets its own, stricter budget. Raised from 5 to 20: the
+    # frontend's multi-file picker (UploadPanel.tsx) sends one /upload
+    # request per selected file, sequentially, so a single legitimate batch
+    # (e.g. 7-10 files) must clear the window without tripping 429s.
+    upload_rate_limit_max: int = 20
     upload_rate_limit_window: float = 60.0
     # Declared for future use; only "dev" has behavior attached (see get_settings).
     env: Literal["dev", "staging", "prod"] = "dev"
