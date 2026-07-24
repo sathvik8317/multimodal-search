@@ -483,6 +483,45 @@ Nothing in this plan touches retrieval, so any change there is a regression.
 7. Time a cold request after 15+ min idle. Record the real number. If it's intolerable,
    switch to Starter — dashboard dropdown, no plan changes.
 
+## Addendum: `/upload` and Cloudflare R2 (later revision)
+
+The sections above describe the original read-only deployment. `/upload`
+(design in `UPLOAD_PLAN.md`) adds a write path, which reopens the "no mutable
+state" premise §1/§2 relied on — the fix is Cloudflare R2, not a Render
+persistent disk (keeps the Free instance and its $0/mo; a paid disk would
+have cost $7+/mo for the same problem). Render stays on Free, no disk.
+
+**Additional environment variables**, on top of the §4 table:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `MMSEARCH_LANCEDB_URI` | `s3://<bucket>/lancedb` | switches `db.open_table()` from the local committed path to R2; unset = local (dev unchanged) |
+| `AWS_ACCESS_KEY_ID` | R2 API token key | standard AWS SDK name — shared by LanceDB's object store and `storage/r2.py`'s boto3 client |
+| `AWS_SECRET_ACCESS_KEY` | R2 API token secret | " |
+| `AWS_ENDPOINT_URL` | `https://<accountid>.r2.cloudflarestorage.com` | " |
+| `AWS_REGION` | `auto` | R2's own recommended value |
+| `MMSEARCH_R2_BUCKET` | bucket name | uploaded thumbnails only; curated thumbnails stay local/in-git |
+| `MMSEARCH_UPLOAD_RATE_LIMIT_MAX` | *(optional, default 5)* | `/upload`'s own budget, separate from `/search`'s |
+
+**One-time setup, in order, before the first `/upload`:**
+
+1. Create the R2 bucket and an API token scoped to it.
+2. Set the env vars above in the Render dashboard.
+3. Run `python scripts/seed_r2.py` **once**, from a machine with those same env
+   vars set — it copies the committed local `data/lancedb` (76 rows) to R2. Idempotent:
+   safe to re-run, it no-ops once the R2 table has rows. `server.py`'s
+   `db.open_table(..., create_if_missing=False)` deliberately refuses to
+   auto-create the R2 table itself (see `db.py`) — a missing/misconfigured
+   table must fail loud (500 from the health check / first request), not
+   silently serve zero results the way the original local-disk `create_if_missing=True`
+   default would.
+4. Redeploy (or restart) so `server.py` picks up the new env vars.
+
+**Moderation:** `scripts/delete_upload.py <uploader>` (or `--all-uploads`)
+deletes rows by their `uploads/<uploader>/...` `source_path` prefix — the
+whole moderation surface for the shared+tagged content model. No UI, run by
+the repo owner against whichever table (`MMSEARCH_LANCEDB_URI`) is live.
+
 ## Deferred, deliberately
 
 - **Persistent disk** — no mutable state to persist. Revisit only if server-side
