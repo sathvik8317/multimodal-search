@@ -61,7 +61,18 @@ RRF_K = 20
 # retrieve/pipeline.py's build_search_fn docstring. This is the fallback
 # default; Settings.min_score_threshold (MMSEARCH_MIN_SCORE_THRESHOLD) can
 # override it per-deployment without a code change.
-MIN_SCORE_THRESHOLD = 0.3
+#
+# 0.1, not a guess: an empirical threshold sweep (rrf+rerank mode, real
+# Cohere reranker, 25-label eval set, real committed 76-row index) found
+# hit-rate@5 identical (0.760, 19/25) at every threshold from 0.0 through
+# 0.20 -- meaning nothing in that range was ever filtering out actual noise
+# -- and dropping to 0.680 (17/25) at 0.30, which cost 2 genuine hits with
+# no offsetting benefit. Separately, live query scores for real, present
+# documents on this corpus ran as low as 0.1325 (Cohere relevance_score for
+# a genuinely correct match) -- so 0.3 was silently discarding real results.
+# 0.1 sits comfortably under every observed real hit while still being an
+# interim value pending the negative-label false-positive sweep.
+MIN_SCORE_THRESHOLD = 0.1
 
 # Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
 # input limits or produce a semantically useless single-vector embedding.
