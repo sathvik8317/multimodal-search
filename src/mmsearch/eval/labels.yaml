@@ -77,3 +77,26 @@
 # --- OR case: same fact, two modalities ---
 - query: "how does late-interaction document retrieval work"
   expected: ["pdf:specs/2407.01449v6.pdf#p1", "img:docs/colqwen_qdrant_doc_agent_diagram.png"]
+
+# --- negative (no correct answer anywhere in the current 76-row corpus) ---
+#
+# See mmsearch.eval.run.false_positive_rate: a nonempty top-k result for any
+# of these is a false positive, since no valid answer exists to return.
+# The first two are the excluded-PDF topics (specs/2106.09685v2.pdf [LoRA]
+# and specs/NIPS-2017-attention-is-all-you-need-Paper.pdf [Attention] were
+# rebuilt out of the committed index for licensing reasons -- see
+# DEPLOYMENT_PLAN.md §2); the rest are clearly out-of-domain.
+- query: "low-rank adaptation of large language models"
+  negative: true
+
+- query: "scaled dot-product attention formula"
+  negative: true
+
+- query: "best recipe for a three-cheese lasagna"
+  negative: true
+
+- query: "quarterly earnings report and revenue guidance for a public company"
+  negative: true
+
+- query: "how to configure a Kubernetes ingress controller with TLS termination"
+  negative: true

@@ -9,6 +9,16 @@ Format (see PLAN.md §5.1):
 
 ``expected`` is a set of acceptable answers combined with OR. See
 mmsearch.eval.run for the hit-rate@5 scoring semantics.
+
+Negative labels -- queries with no correct answer anywhere in the corpus --
+use ``negative: true`` instead of ``expected``:
+
+    - query: "low-rank adaptation of large language models"
+      negative: true
+
+See mmsearch.eval.run.false_positive_rate for how these are scored: any
+nonempty top-k result for a negative label is a false positive, since there
+is no valid answer to return.
 """
 
 from __future__ import annotations
@@ -22,7 +32,8 @@ import yaml
 @dataclass(frozen=True)
 class Label:
     query: str
-    expected: tuple[str, ...]
+    expected: tuple[str, ...] = ()
+    negative: bool = False
 
 
 def _build_label(entry: dict) -> Label:
@@ -30,7 +41,17 @@ def _build_label(entry: dict) -> Label:
     if not isinstance(query, str) or not query:
         raise ValueError(f"label entry {entry!r} must have a non-empty string 'query'")
 
+    negative = bool(entry.get("negative", False))
     expected = entry.get("expected")
+
+    if negative:
+        if expected:
+            raise ValueError(
+                f"negative label for query {query!r} must not have an 'expected' list "
+                "-- negative means no correct answer exists"
+            )
+        return Label(query=query, expected=(), negative=True)
+
     if not isinstance(expected, list) or not expected:
         raise ValueError(f"label for query {query!r} must have a non-empty 'expected' list")
 

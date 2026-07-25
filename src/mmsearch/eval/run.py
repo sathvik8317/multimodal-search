@@ -11,6 +11,13 @@ every modality/text_source referenced by a query's ``expected`` ids gets its
 denominator incremented regardless of whether the query hit or missed; only
 the modality/text_source of an id that actually appeared in the *hit set*
 gets its numerator incremented. See ``evaluate()`` for the worked example.
+
+``false_positive_rate()`` scores the opposite failure mode: negative labels
+(``Label.negative=True``) are queries with no correct answer anywhere in the
+corpus, so returning *anything* nonempty is wrong, independent of what it
+is. ``evaluate()`` never sees negative labels meaningfully (their empty
+``expected`` makes them silent misses that skew hit-rate down) -- callers
+must filter labels by ``negative`` before choosing which function to run.
 """
 
 from __future__ import annotations
@@ -25,6 +32,25 @@ from mmsearch.schema import Modality, TextSource
 
 def score_hit(expected: tuple[str, ...], returned_ids: list[str], k: int) -> bool:
     return bool(set(expected) & set(returned_ids[:k]))
+
+
+def false_positive_rate(
+    search_fn: SearchFn,
+    labels: list[Label],
+    k: int = config.TOP_K,
+) -> float:
+    """Fraction of negative labels (Label.negative=True -- queries with no
+    correct answer in the corpus) for which search_fn wrongly returned a
+    nonempty top-k result. There is no valid answer for these queries, so
+    any result above the score threshold is a false positive, regardless of
+    what it is. Positive labels are ignored entirely (never queried).
+    Returns 0.0 (not NaN) when there are no negative labels to score.
+    """
+    negative_labels = [label for label in labels if label.negative]
+    if not negative_labels:
+        return 0.0
+    false_positives = sum(1 for label in negative_labels if search_fn(label.query, k))
+    return false_positives / len(negative_labels)
 
 
 @dataclass(frozen=True)
