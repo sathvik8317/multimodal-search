@@ -16,6 +16,7 @@ docstring for what that means in practice for each.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import HTTPException
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _SNIPPET_LEN = 200
 _VALID_MODES = ("vector-only", "rrf-only", "rrf+rerank")
+_RERANK_SUMMARY_MAX_CHARS = 500
 
 
 def _build_snippet(content_text: str, modality: Modality) -> str:
@@ -58,6 +60,39 @@ def _build_snippet(content_text: str, modality: Modality) -> str:
         return "\n".join(lines[start:])[:_SNIPPET_LEN]
 
     return content_text[:_SNIPPET_LEN]
+
+
+def _table_rerank_summary(row: dict) -> str:
+    """A short synthetic description of a table row, for the reranker only.
+
+    Diagnostic finding: the full markdown table blob (up to 12KB,
+    config.MAX_TABLE_EMBED_CHARS) sent as-is scored 0.39-0.66 on completely
+    unrelated queries -- Cohere Rerank has no natural-language signal to
+    judge a huge pipe-delimited grid against and appears to default toward a
+    moderate-to-high score regardless of topic. This summary gives it an
+    actual sentence to compare against the query instead.
+    """
+    metadata = json.loads(row["metadata"])
+    filename = row["source_path"].rsplit("/", 1)[-1]
+    columns = metadata.get("columns", [])
+    total_rows = metadata.get("total_rows", metadata.get("n_rows", "unknown"))
+    sample_lines = row["content_text"].split("\n")[2:4]  # skip header + separator
+    summary = (
+        f"Table: {filename}. Columns: {', '.join(columns)}. "
+        f"{total_rows} rows. Sample: {' '.join(sample_lines)}"
+    )
+    return summary[:_RERANK_SUMMARY_MAX_CHARS]
+
+
+def _rerank_text(row: dict) -> str:
+    """Text sent to the reranker for a candidate row. Embedding and FTS
+    always use content_text unchanged (see ingest/tables.py, db.py) -- this
+    exists solely to fix table rows' rerank input; every other modality is a
+    passthrough.
+    """
+    if Modality(row["modality"]) is Modality.TABLE:
+        return _table_rerank_summary(row)
+    return row["content_text"]
 
 
 def _row_to_result(row: dict, score: float) -> SearchResult:
@@ -183,7 +218,7 @@ def build_search_fn(
             return _above_threshold(_positional_results(fused_ids[:k], id_to_row), min_score_threshold)
 
         shortlist_ids = fused_ids[:rerank_m]
-        shortlist_docs = [id_to_row[id_]["content_text"] for id_ in shortlist_ids]
+        shortlist_docs = [_rerank_text(id_to_row[id_]) for id_ in shortlist_ids]
         try:
             rerank_results = reranker.rerank(query, shortlist_docs, top_n=k)
         except Exception:

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi import HTTPException
 
@@ -5,7 +7,7 @@ from mmsearch import config
 from mmsearch.clients.fakes import FakeEmbeddingClient, FakeReranker
 from mmsearch.clients.protocols import EmbedInput, RerankResult
 from mmsearch.db import ensure_fts_index, open_table, upsert
-from mmsearch.retrieve.pipeline import _row_to_result, build_search_fn
+from mmsearch.retrieve.pipeline import _rerank_text, _row_to_result, build_search_fn
 from mmsearch.retrieve.types import SearchResult
 from mmsearch.schema import Modality, Row, TextSource
 
@@ -459,3 +461,158 @@ def test_diagram_snippet_behavior_is_unchanged_flat_200_char_slice():
     result = _row_to_result(row, score=1.0)
 
     assert result.snippet == long_text[:200]
+
+
+# --- _rerank_text: table reranking miscalibration fix -----------------------------------
+#
+# Diagnostic finding: the full ~12KB markdown table blob sent as rerank input scored
+# 0.39-0.66 on completely unrelated queries (Kubernetes/lasagna/quarterly-earnings style),
+# while PDF prose controls correctly scored near-zero on the same queries (3-20x ratio).
+# _rerank_text() sends a short synthetic summary for table rows instead of the raw blob;
+# embedding and FTS still use content_text unchanged (see build_search_fn -- id_to_row's
+# content_text is untouched, only the rerank shortlist_docs construction changed).
+
+def _table_row_dict(columns, data_rows, total_rows, source_path="data/example.csv"):
+    header = "| " + " | ".join(columns) + " |"
+    separator = "| " + " | ".join("---" for _ in columns) + " |"
+    lines = [header, separator] + ["| " + " | ".join(row) + " |" for row in data_rows]
+    content_text = "\n".join(lines)
+    metadata = json.dumps(
+        {
+            "n_rows": len(data_rows),
+            "n_cols": len(columns),
+            "columns": columns,
+            "truncated": False,
+            "total_rows": total_rows,
+        }
+    )
+    return {
+        "id": f"tbl:{source_path}",
+        "modality": "table",
+        "content_text": content_text,
+        "thumbnail_ref": "",
+        "source_path": source_path,
+        "text_source": "table_markdown",
+        "metadata": metadata,
+    }
+
+
+def test_rerank_text_passthrough_for_non_table_modalities():
+    row = _code_row(_CODE_TEXT_FUNCTION)
+    assert _rerank_text(row) == row["content_text"]
+
+
+def test_rerank_text_for_table_row_is_much_shorter_than_content_text():
+    row = _table_row_dict(
+        columns=["Make", "Model", "Year"],
+        data_rows=[["Toyota", "Camry", "2020"], ["Honda", "Civic", "2019"]] * 20,
+        total_rows=5000,
+    )
+    summary = _rerank_text(row)
+    assert len(summary) < len(row["content_text"])
+    assert len(summary) <= 500
+
+
+def test_rerank_text_for_table_row_includes_filename_columns_and_row_count():
+    row = _table_row_dict(
+        columns=["Make", "Model", "Year"],
+        data_rows=[["Toyota", "Camry", "2020"]],
+        total_rows=5000,
+        source_path="data/car_prediction_data.csv",
+    )
+    summary = _rerank_text(row)
+    assert "car_prediction_data.csv" in summary
+    assert "Make" in summary and "Model" in summary and "Year" in summary
+    assert "5000" in summary
+
+
+def test_rerank_text_for_table_row_includes_a_data_sample():
+    row = _table_row_dict(
+        columns=["Make", "Model"],
+        data_rows=[["Toyota", "Camry"], ["Honda", "Civic"]],
+        total_rows=2,
+    )
+    summary = _rerank_text(row)
+    assert "Toyota" in summary or "Camry" in summary
+
+
+def test_rerank_text_for_table_row_is_capped_even_with_long_column_names():
+    many_columns = [f"very_long_column_name_number_{i}" for i in range(50)]
+    row = _table_row_dict(columns=many_columns, data_rows=[["x"] * 50], total_rows=1)
+    summary = _rerank_text(row)
+    assert len(summary) <= 500
+
+
+def test_rrf_rerank_uses_rerank_text_not_raw_content_text_for_table_rows(table, monkeypatch):
+    # The reranker must receive the summary, not the full markdown blob --
+    # spy on what's actually passed to reranker.rerank().
+    seen_docs = []
+
+    class SpyReranker:
+        def rerank(self, query, documents, top_n):
+            seen_docs.extend(documents)
+            return FakeReranker().rerank(query, documents, top_n)
+
+    search_fn = build_search_fn(table, COHERE_EMBEDDER, OPENAI_EMBEDDER, SpyReranker(), mode="rrf+rerank")
+    search_fn("p99 latency numbers for the reranker service", k=3)
+
+    table_row = table.to_arrow().to_pylist()
+    table_content_text = next(r["content_text"] for r in table_row if r["modality"] == "table")
+    assert table_content_text not in seen_docs  # raw blob never reaches the reranker
+
+
+# --- live: proves the fix against the real Cohere API (opt-in, `pytest -m live`) --------
+#
+# Not a fake -- the whole point is verifying real Cohere Rerank behavior against the
+# actual committed corpus, the same direct-rerank-call approach the diagnostic used.
+# Excluded from the default suite by pyproject.toml's `addopts = -m "not live"`.
+
+@pytest.mark.live
+def test_table_rerank_summary_scores_near_zero_on_unrelated_queries_like_pdf_controls():
+    from mmsearch import db
+    from mmsearch.clients.cohere import CohereClient
+
+    real_table = db.open_table()
+    rows = real_table.to_arrow().to_pylist()
+    table_rows = [r for r in rows if r["modality"] == "table"]
+    assert len(table_rows) == 4  # sanity: the real committed corpus
+
+    pdf_ids = [
+        "pdf:specs/2407.01449v6.pdf#p1",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p1",
+        "pdf:specs/2407.01449v6.pdf#p12",
+    ]
+    pdf_rows = [next(r for r in rows if r["id"] == pid) for pid in pdf_ids]
+
+    docs = table_rows + pdf_rows
+    doc_texts = [_rerank_text(r) for r in docs]
+
+    # the fix must not touch content_text used for embedding/FTS
+    for row, text in zip(table_rows, doc_texts[: len(table_rows)]):
+        assert text != row["content_text"]
+        assert len(text) <= 500
+
+    client = CohereClient()
+    # "quarterly earnings" is deliberately not treated the same as the other
+    # two: ecommerce_sales_analytics_5000.csv genuinely has a "revenue"
+    # column, so post-fix it picks up a real (if weak) lexical connection to
+    # "earnings" -- measured at 0.139, vs. 0.53-0.71 pre-fix for the exact
+    # same query/table pair. That is the reranker doing its job now that it
+    # has real content to judge, not the bug (which was topic-blind: every
+    # query scored high regardless of any actual relevance). "Kubernetes
+    # ingress" and "lasagna recipe" have no such legitimate connection to
+    # any table, so those two are held to the tight near-zero bound that
+    # directly proves the bug is gone.
+    tight_queries = ["Kubernetes ingress", "lasagna recipe"]
+    loose_queries = ["quarterly earnings"]
+
+    for query in tight_queries + loose_queries:
+        results = client.rerank(query, doc_texts, top_n=len(doc_texts))
+        by_index = {r.index: r.relevance_score for r in results}
+        table_scores = [by_index[i] for i in range(len(table_rows))]
+        bound = 0.1 if query in tight_queries else 0.2
+        for score in table_scores:
+            assert score < bound, (
+                f"table rerank score {score} for query {query!r} exceeds {bound} after "
+                "the summary fix -- still elevated, not just a weak genuine lexical match"
+            )
