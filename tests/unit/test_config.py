@@ -56,10 +56,11 @@ def test_max_table_embed_chars_is_a_positive_int_under_the_row_cap_estimate():
 
 def test_min_score_threshold_fallback_default():
     # The code-level fallback used when Settings.min_score_threshold isn't
-    # overridden via MMSEARCH_MIN_SCORE_THRESHOLD (see settings.py). 0.05
-    # dominates 0.10-0.20 in the labeled sweep (identical hit-rate@5 and
-    # false-positive-rate) -- see config.py's comment for the sweep result.
-    assert config.MIN_SCORE_THRESHOLD == 0.05
+    # overridden via MMSEARCH_MIN_SCORE_THRESHOLD (see settings.py). 0.10
+    # halves false-positive-rate vs 0.05 (0.200 vs 0.400) at identical
+    # hit-rate@5 (0.760) in the post-table-fix sweep -- see config.py's
+    # comment for the full result.
+    assert config.MIN_SCORE_THRESHOLD == 0.10
 
 
 def test_max_table_embed_chars_matches_calibrated_safe_value():

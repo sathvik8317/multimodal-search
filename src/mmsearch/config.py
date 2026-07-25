@@ -62,26 +62,25 @@ RRF_K = 20
 # default; Settings.min_score_threshold (MMSEARCH_MIN_SCORE_THRESHOLD) can
 # override it per-deployment without a code change.
 #
-# 0.05, not a guess: a labeled threshold sweep (rrf+rerank mode, real
-# Cohere reranker, real committed 76-row index) measured both hit-rate@5 (25
-# positive labels) and false-positive-rate (5 negative labels -- queries
-# with no correct answer anywhere in the corpus, see eval/labels.yaml) at
-# thresholds 0.0-0.30. 0.05 dominates 0.10-0.20 outright: all three land on
-# the exact same hit-rate@5 (0.760, 19/25) and false-positive-rate (0.800,
-# 4/5), so raising the floor from 0.05 to 0.10 or 0.20 bought nothing.  0.30
-# is strictly worse (hit-rate@5 drops to 0.680, false-positive-rate
-# unchanged). 0.0 is worse on false positives alone (1.000, 5/5).
+# 0.10, not a guess: re-swept (rrf+rerank mode, real Cohere reranker, real
+# committed 76-row index) after fixing the table-modality reranking
+# miscalibration (retrieve/pipeline.py's _rerank_text -- tables were
+# scoring 0.39-0.66 on completely unrelated queries pre-fix, drowning out
+# any signal a score threshold could act on). That fix changed which
+# threshold wins: 0.10 now halves false-positive-rate vs 0.05 (0.200 vs
+# 0.400, 5 negative labels -- queries with no correct answer anywhere in
+# the corpus, see eval/labels.yaml) at *identical* hit-rate@5 (0.760, 19/25
+# positive labels) -- a tradeoff that didn't exist in the original sweep,
+# where 0.05-0.20 were all identical because the table bug swamped
+# everything the threshold could distinguish. 0.30 is still strictly worse
+# (hit-rate@5 drops to 0.680, no further false-positive gain).
 #
-# Critically, threshold tuning has a hard ceiling: it can only catch
-# genuinely low-confidence noise (the one false positive it does fix scored
-# 0.039), not a confidently-wrong reranker. 4 of the 5 negative labels leak
-# a top result scoring 0.37-0.84 -- the reranker is being asked to rank a
-# shortlist and always returns *something*, so no threshold in this range
-# (or plausibly any range) fixes those without also cutting real hits. See
-# eval/run.py's false_positive_rate() and eval/labels.yaml's negative labels
-# for the mechanism; a real fix (if ever needed) is a different retrieval
-# question, not a score cutoff.
-MIN_SCORE_THRESHOLD = 0.05
+# Threshold tuning still can't fix a confidently-wrong reranker, only
+# genuinely low-confidence noise -- the one remaining leak at 0.10 is an
+# unrelated PDF-page confusion (not a table), scoring 0.84. See
+# eval/run.py's false_positive_rate() and eval/labels.yaml's negative
+# labels for the mechanism.
+MIN_SCORE_THRESHOLD = 0.10
 
 # Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
 # input limits or produce a semantically useless single-vector embedding.
