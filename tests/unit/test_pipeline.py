@@ -16,17 +16,17 @@ OPENAI_EMBEDDER = FakeEmbeddingClient(dim=config.OPENAI_EMBED_DIM)
 
 
 def _row(id_: str, content_text: str, modality: Modality, **overrides) -> Row:
-    """Populate vectors the way real ingestion does: pdf_page/diagram get a
-    Cohere image vector (diagram/scanned-caption pages also get an OpenAI
-    caption vector); table/code get an OpenAI text vector only.
+    """Populate vectors the way real ingestion does (post Phase 3): every row
+    gets an OpenAI text vector; pdf_page/diagram also get a Cohere image
+    vector. Before Phase 3, text-layer pdf_page rows had no vector_openai --
+    ingest/documents.py's ingest_pdf now embeds every page's text regardless
+    of text_source, batched per-document.
     """
     text_source = overrides.get("text_source", TextSource.CODE_SOURCE)
     vector_cohere = None
-    vector_openai = None
     if modality in (Modality.PDF_PAGE, Modality.DIAGRAM):
         vector_cohere = COHERE_EMBEDDER.embed_documents([EmbedInput(text=content_text)])[0]
-    if modality in (Modality.TABLE, Modality.CODE) or text_source == TextSource.VLM_CAPTION:
-        vector_openai = OPENAI_EMBEDDER.embed_documents([EmbedInput(text=content_text)])[0]
+    vector_openai = OPENAI_EMBEDDER.embed_documents([EmbedInput(text=content_text)])[0]
 
     defaults = dict(
         id=id_,
@@ -138,7 +138,7 @@ def test_vector_only_does_not_invoke_fts_search(table, monkeypatch):
     original_search = type(table).search
     calls = []
 
-    def spy_search(self, query, query_type=None, *args, **kwargs):
+    def spy_search(self, query=None, query_type=None, *args, **kwargs):
         calls.append((query_type, kwargs.get("vector_column_name")))
         return original_search(self, query, query_type=query_type, *args, **kwargs)
 
@@ -153,13 +153,111 @@ def test_vector_only_does_not_invoke_fts_search(table, monkeypatch):
     assert vector_columns == {"vector_cohere", "vector_openai"}
 
 
+class _ScriptedTable:
+    """Fake table returning pre-scripted per-list ranked orders instead of
+    real similarity search, so a specific ranking scenario can be built
+    exactly -- FakeEmbeddingClient's hash-based vectors can't be steered
+    precisely enough to hand-construct one. Used only for the
+    eligibility-normalization integration test below.
+    """
+
+    def __init__(self, rows_by_id, cohere_ranking, openai_ranking, cohere_eligible, openai_eligible):
+        self._rows_by_id = rows_by_id
+        self._cohere_ranking = cohere_ranking
+        self._openai_ranking = openai_ranking
+        self._cohere_eligible = cohere_eligible
+        self._openai_eligible = openai_eligible
+
+    def search(self, query=None, query_type=None, vector_column_name=None):
+        if query_type is None and vector_column_name is None:
+            # _build_eligibility's table.search().select([...]).to_list()
+            rows = [
+                {
+                    "id": id_,
+                    "vector_cohere": [0.0] if id_ in self._cohere_eligible else None,
+                    "vector_openai": [0.0] if id_ in self._openai_eligible else None,
+                }
+                for id_ in self._rows_by_id
+            ]
+            return _Chain(rows)
+        if vector_column_name == "vector_cohere":
+            ranking = self._cohere_ranking
+        elif vector_column_name == "vector_openai":
+            ranking = self._openai_ranking
+        else:
+            raise AssertionError("this test never issues an FTS search")
+        return _Chain([self._rows_by_id[id_] for id_ in ranking])
+
+
+class _Chain:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def select(self, columns):
+        return self
+
+    def limit(self, n):
+        return _Chain(self._rows[:n])
+
+    def to_list(self):
+        return self._rows
+
+
+def test_vector_only_no_longer_lets_a_multi_eligible_row_beat_a_better_ranked_single_eligible_row():
+    """Integration check for the eligibility-normalization fix, exercised
+    through build_search_fn end-to-end (not just fusion.py's pure-function
+    tests) -- traces the real bug found against the committed corpus: a code
+    row ranking #1 in its only eligible list (OpenAI) must beat a pdf_page
+    row that merely appears in *both* lists at worse individual ranks.
+    Plain sum-RRF got this backwards (see the k=1 hand computation below,
+    mirroring fusion.py's test_multi_eligible_list_id_is_normalized...).
+    """
+    rows_by_id = {
+        "code:winner": {
+            "id": "code:winner",
+            "modality": "code",
+            "content_text": "def winner(): pass",
+            "thumbnail_ref": "",
+            "source_path": "src/winner.py",
+            "text_source": "code_source",
+        },
+        "pdf:loser": {
+            "id": "pdf:loser",
+            "modality": "pdf_page",
+            "content_text": "irrelevant content",
+            "thumbnail_ref": "loser.png",
+            "source_path": "specs/loser.pdf",
+            "text_source": "pdf_text_layer",
+        },
+    }
+    # k=1: code:winner (openai rank0) = 1.0, denominator 1 (openai-only eligible) -> 1.0.
+    # pdf:loser (cohere rank0=1.0, openai rank1=0.5) sums to 1.5 under plain
+    # sum-RRF -- beating code:winner despite being ranked worse on average.
+    # Eligibility-normalized: 1.5 / 2 eligible lists = 0.75, correctly below
+    # code:winner's 1.0.
+    scripted_table = _ScriptedTable(
+        rows_by_id=rows_by_id,
+        cohere_ranking=["pdf:loser"],
+        openai_ranking=["code:winner", "pdf:loser"],
+        cohere_eligible={"pdf:loser"},
+        openai_eligible={"code:winner", "pdf:loser"},
+    )
+
+    search_fn = build_search_fn(
+        scripted_table, COHERE_EMBEDDER, OPENAI_EMBEDDER, NeverCallReranker(), mode="vector-only", rrf_k=1
+    )
+    results = search_fn("anything", k=2)
+
+    assert [r.id for r in results] == ["code:winner", "pdf:loser"]
+
+
 # --- rrf-only mode -------------------------------------------------------------------------
 
 def test_rrf_only_calls_both_vector_retrievers_and_fts_but_never_reranker(table, monkeypatch):
     original_search = type(table).search
     calls = []
 
-    def spy_search(self, query, query_type=None, *args, **kwargs):
+    def spy_search(self, query=None, query_type=None, *args, **kwargs):
         calls.append((query_type, kwargs.get("vector_column_name")))
         return original_search(self, query, query_type=query_type, *args, **kwargs)
 
@@ -207,7 +305,7 @@ def test_cohere_embedder_failure_skips_the_cohere_vector_search_call(table, monk
     original_search = type(table).search
     calls = []
 
-    def spy_search(self, query, query_type=None, *args, **kwargs):
+    def spy_search(self, query=None, query_type=None, *args, **kwargs):
         calls.append((query_type, kwargs.get("vector_column_name")))
         return original_search(self, query, query_type=query_type, *args, **kwargs)
 
