@@ -33,6 +33,9 @@
 - query: "diagram showing the transformer encoder decoder architecture"
   expected: ["img:docs/transformers.png"]
 
+- query: "multi-head attention mechanism explanation"
+  expected: ["img:docs/transformers.png"]
+
 - query: "diagram of the RRF fusion and reranking retrieval pipeline"
   expected: ["img:docs/retrieval_pipeline_diagram.png"]
 
@@ -56,20 +59,26 @@
   expected: ["tbl:data/ecommerce_sales_analytics_5000.csv"]
 
 # --- pdfs ---
-- query: "what is low-rank adaptation of large language models"
-  expected: ["pdf:specs/2106.09685v2.pdf#p1"]
-
-- query: "LoRA reduces trainable parameters by freezing pretrained weights"
-  expected: ["pdf:specs/2106.09685v2.pdf#p1"]
-
-- query: "the scaled dot-product attention formula"
-  expected: ["pdf:specs/NIPS-2017-attention-is-all-you-need-Paper.pdf#p4"]
-
-- query: "multi-head attention mechanism explanation"
-  expected: ["pdf:specs/NIPS-2017-attention-is-all-you-need-Paper.pdf#p4"]
-
+# NOTE: the 4 labels formerly here (2 LoRA, 2 attention-formula) pointed at
+# pdf:specs/2106.09685v2.pdf and pdf:specs/NIPS-2017-attention-is-all-you-need-Paper.pdf
+# -- both excluded from the committed index for arXiv-redistribution licensing
+# (see corpus/README.md, DEPLOYMENT_PLAN.md §2). Anyone running the eval
+# against the committed repo hit a KeyError in evaluate() (run.py:79) on
+# those ids, and the two topics were *also* asserted unanswerable by the
+# negative labels below -- a direct self-contradiction. Removed; replaced
+# with attention/architecture-content labels the committed corpus actually
+# answers (see the two ColPali entries and the transformers.png diagram
+# entry above under "--- diagrams ---"). If the two PDFs are ever added back
+# under a license-safe substitute, restore labels pointing at them then --
+# don't guess ids that aren't in the index today.
 - query: "how does ColPali retrieve documents using vision language models"
   expected: ["pdf:specs/2407.01449v6.pdf#p1"]
+
+- query: "how SigLIP vision transformer patch embeddings are fed into the PaliGemma language model"
+  expected: ["pdf:specs/2407.01449v6.pdf#p7"]
+
+- query: "MaxSim operator for computing fine-grained late-interaction similarity scores"
+  expected: ["pdf:specs/2407.01449v6.pdf#p23"]
 
 - query: "how to fine-tune an LLM for free using a Kaggle GPU"
   expected: ["pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p1"]

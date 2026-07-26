@@ -1,0 +1,479 @@
+{
+  "mode": "rrf+rerank",
+  "threshold": 0.1,
+  "aggregate_hit_rate": 0.9166666666666666,
+  "per_modality": {
+    "code": 1.0,
+    "diagram": 0.8,
+    "table": 1.0,
+    "pdf_page": 0.6
+  },
+  "per_text_source": {
+    "code_source": 1.0,
+    "vlm_caption": 0.8,
+    "table_markdown": 1.0,
+    "pdf_text_layer": 0.6
+  },
+  "false_positive_rate": 0.2,
+  "per_query": [
+    {
+      "query": "function that deduplicates a list while preserving order",
+      "expected": [
+        "code:src/extractor.py#dedupe_preserve_order"
+      ],
+      "returned_ids": [
+        "code:src/extractor.py#dedupe_preserve_order",
+        "code:src/extractor.py#infer_implementation_flow",
+        "code:src/extractor.py#infer_architecture_decisions",
+        "code:src/extractor.py#infer_patterns_from_code_chunks",
+        "code:src/extractor.py#build_compact_extraction_input"
+      ],
+      "scores": [
+        0.7938904,
+        0.52115494,
+        0.49157855,
+        0.4905535,
+        0.26745886
+      ],
+      "hit": true
+    },
+    {
+      "query": "how does the extractor detect which programming language was used",
+      "expected": [
+        "code:src/extractor.py#guess_language"
+      ],
+      "returned_ids": [
+        "code:src/extractor.py#guess_language",
+        "code:src/extractor.py#guess_framework",
+        "code:src/extractor.py#build_compact_extraction_input",
+        "code:src/extractor.py#deterministic_memory",
+        "code:src/extractor.py#normalize_llm_memory"
+      ],
+      "scores": [
+        0.6180666,
+        0.42362547,
+        0.31760663,
+        0.2517447,
+        0.23773557
+      ],
+      "hit": true
+    },
+    {
+      "query": "function that safely parses JSON even if the model wraps it in extra text",
+      "expected": [
+        "code:src/extractor.py#safe_json_loads"
+      ],
+      "returned_ids": [
+        "code:src/extractor.py#safe_json_loads"
+      ],
+      "scores": [
+        0.27115566
+      ],
+      "hit": true
+    },
+    {
+      "query": "how does the system decide between ASP.NET Core and FastAPI as the framework",
+      "expected": [
+        "code:src/extractor.py#guess_framework"
+      ],
+      "returned_ids": [
+        "code:src/extractor.py#guess_framework",
+        "code:src/extractor.py#infer_architecture_decisions",
+        "code:src/extractor.py#guess_language"
+      ],
+      "scores": [
+        0.64182705,
+        0.2449093,
+        0.17368059
+      ],
+      "hit": true
+    },
+    {
+      "query": "function that guesses the feature name from a session transcript",
+      "expected": [
+        "code:src/extractor.py#guess_feature"
+      ],
+      "returned_ids": [
+        "code:src/extractor.py#guess_feature",
+        "code:src/extractor.py#guess_domain",
+        "code:src/extractor.py#guess_framework",
+        "code:src/extractor.py#build_compact_extraction_input",
+        "code:src/extractor.py#deterministic_memory"
+      ],
+      "scores": [
+        0.6420965,
+        0.47592255,
+        0.31088316,
+        0.24836595,
+        0.22895758
+      ],
+      "hit": true
+    },
+    {
+      "query": "function that calls Ollama to extract engineering memory from a session",
+      "expected": [
+        "code:src/extractor.py#call_ollama"
+      ],
+      "returned_ids": [
+        "code:src/extractor.py#extract_engineering_memory",
+        "code:src/extractor.py#build_compact_extraction_input",
+        "code:src/extractor.py#normalize_llm_memory",
+        "code:src/extractor.py#call_ollama",
+        "code:src/extractor.py#deterministic_memory"
+      ],
+      "scores": [
+        0.77446437,
+        0.5798055,
+        0.5524679,
+        0.52685463,
+        0.5253938
+      ],
+      "hit": true
+    },
+    {
+      "query": "validation logic that runs after a Row object is constructed",
+      "expected": [
+        "code:src/schema.py#Row.__post_init__"
+      ],
+      "returned_ids": [
+        "code:src/schema.py#Row.__post_init__"
+      ],
+      "scores": [
+        0.28506383
+      ],
+      "hit": true
+    },
+    {
+      "query": "the make_id function that mints ids for search rows",
+      "expected": [
+        "code:src/schema.py#make_id"
+      ],
+      "returned_ids": [
+        "code:src/schema.py#make_id"
+      ],
+      "scores": [
+        0.5185224
+      ],
+      "hit": true
+    },
+    {
+      "query": "function that converts a list of Row objects into a PyArrow table",
+      "expected": [
+        "code:src/schema.py#rows_to_table"
+      ],
+      "returned_ids": [
+        "code:src/schema.py#rows_to_table"
+      ],
+      "scores": [
+        0.6649108
+      ],
+      "hit": true
+    },
+    {
+      "query": "the Modality enum listing pdf_page diagram table and code types",
+      "expected": [
+        "code:src/schema.py#Modality"
+      ],
+      "returned_ids": [
+        "code:src/schema.py#Modality",
+        "code:src/schema.py#make_id",
+        "code:src/schema.py#TextSource"
+      ],
+      "scores": [
+        0.7906115,
+        0.57666177,
+        0.40882006
+      ],
+      "hit": true
+    },
+    {
+      "query": "diagram showing the transformer encoder decoder architecture",
+      "expected": [
+        "img:docs/transformers.png"
+      ],
+      "returned_ids": [
+        "img:docs/transformers.png"
+      ],
+      "scores": [
+        0.68140936
+      ],
+      "hit": true
+    },
+    {
+      "query": "multi-head attention mechanism explanation",
+      "expected": [
+        "img:docs/transformers.png"
+      ],
+      "returned_ids": [
+        "img:docs/transformers.png"
+      ],
+      "scores": [
+        0.40853685
+      ],
+      "hit": true
+    },
+    {
+      "query": "diagram of the RRF fusion and reranking retrieval pipeline",
+      "expected": [
+        "img:docs/retrieval_pipeline_diagram.png"
+      ],
+      "returned_ids": [
+        "img:docs/retrieval_pipeline_diagram.png",
+        "pdf:specs/2407.01449v6.pdf#p12"
+      ],
+      "scores": [
+        0.67758125,
+        0.10183054
+      ],
+      "hit": true
+    },
+    {
+      "query": "diagram of the ColQwen2.5 and Qdrant document agent architecture",
+      "expected": [
+        "img:docs/colqwen_qdrant_doc_agent_diagram.png"
+      ],
+      "returned_ids": [
+        "img:docs/colqwen_qdrant_doc_agent_diagram.png",
+        "pdf:specs/2407.01449v6.pdf#p21",
+        "pdf:specs/2407.01449v6.pdf#p10"
+      ],
+      "scores": [
+        0.6762998,
+        0.33089322,
+        0.12612738
+      ],
+      "hit": true
+    },
+    {
+      "query": "car pricing dataset with kilometers driven and fuel type",
+      "expected": [
+        "tbl:data/car_prediction_data.csv"
+      ],
+      "returned_ids": [
+        "tbl:data/car_prediction_data.csv",
+        "tbl:data/automobile_dataset.csv"
+      ],
+      "scores": [
+        0.7823471,
+        0.55275756
+      ],
+      "hit": true
+    },
+    {
+      "query": "automobile dataset with horsepower and torque columns",
+      "expected": [
+        "tbl:data/automobile_dataset.csv"
+      ],
+      "returned_ids": [
+        "tbl:data/automobile_dataset.csv",
+        "tbl:data/car_prediction_data.csv"
+      ],
+      "scores": [
+        0.8624794,
+        0.18220748
+      ],
+      "hit": true
+    },
+    {
+      "query": "ecommerce sales data with customer rating and delivery days",
+      "expected": [
+        "tbl:data/ecommerce_sales_analytics_5000.csv"
+      ],
+      "returned_ids": [
+        "tbl:data/ecommerce_sales_analytics_5000.csv",
+        "code:src/extractor.py#safe_json_loads"
+      ],
+      "scores": [
+        0.8415267,
+        0.1238843
+      ],
+      "hit": true
+    },
+    {
+      "query": "table listing selling price versus present price for used cars",
+      "expected": [
+        "tbl:data/car_prediction_data.csv"
+      ],
+      "returned_ids": [
+        "tbl:data/car_prediction_data.csv",
+        "tbl:data/automobile_dataset.csv"
+      ],
+      "scores": [
+        0.5274388,
+        0.30167103
+      ],
+      "hit": true
+    },
+    {
+      "query": "sales table broken down by product category and region",
+      "expected": [
+        "tbl:data/ecommerce_sales_analytics_5000.csv"
+      ],
+      "returned_ids": [
+        "tbl:data/ecommerce_sales_analytics_5000.csv"
+      ],
+      "scores": [
+        0.70702106
+      ],
+      "hit": true
+    },
+    {
+      "query": "how does ColPali retrieve documents using vision language models",
+      "expected": [
+        "pdf:specs/2407.01449v6.pdf#p1"
+      ],
+      "returned_ids": [
+        "pdf:specs/2407.01449v6.pdf#p1",
+        "pdf:specs/2407.01449v6.pdf#p2",
+        "pdf:specs/2407.01449v6.pdf#p6",
+        "pdf:specs/2407.01449v6.pdf#p10",
+        "pdf:specs/2407.01449v6.pdf#p5"
+      ],
+      "scores": [
+        0.86981434,
+        0.8690161,
+        0.8405867,
+        0.82288796,
+        0.7140107
+      ],
+      "hit": true
+    },
+    {
+      "query": "how SigLIP vision transformer patch embeddings are fed into the PaliGemma language model",
+      "expected": [
+        "pdf:specs/2407.01449v6.pdf#p7"
+      ],
+      "returned_ids": [
+        "pdf:specs/2407.01449v6.pdf#p7",
+        "pdf:specs/2407.01449v6.pdf#p3",
+        "pdf:specs/2407.01449v6.pdf#p22",
+        "pdf:specs/2407.01449v6.pdf#p8",
+        "pdf:specs/2407.01449v6.pdf#p9"
+      ],
+      "scores": [
+        0.8755427,
+        0.78014404,
+        0.7253574,
+        0.61695945,
+        0.54201555
+      ],
+      "hit": true
+    },
+    {
+      "query": "MaxSim operator for computing fine-grained late-interaction similarity scores",
+      "expected": [
+        "pdf:specs/2407.01449v6.pdf#p23"
+      ],
+      "returned_ids": [
+        "pdf:specs/2407.01449v6.pdf#p23",
+        "pdf:specs/2407.01449v6.pdf#p6",
+        "pdf:specs/2407.01449v6.pdf#p3",
+        "img:docs/colqwen_qdrant_doc_agent_diagram.png",
+        "pdf:specs/2407.01449v6.pdf#p21"
+      ],
+      "scores": [
+        0.7724109,
+        0.4120811,
+        0.37999994,
+        0.32924125,
+        0.17079856
+      ],
+      "hit": true
+    },
+    {
+      "query": "how to fine-tune an LLM for free using a Kaggle GPU",
+      "expected": [
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p1"
+      ],
+      "returned_ids": [
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p5",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p2",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p16",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p13",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p3"
+      ],
+      "scores": [
+        0.8576849,
+        0.853046,
+        0.846159,
+        0.8455478,
+        0.84183896
+      ],
+      "hit": false
+    },
+    {
+      "query": "how does late-interaction document retrieval work",
+      "expected": [
+        "pdf:specs/2407.01449v6.pdf#p1",
+        "img:docs/colqwen_qdrant_doc_agent_diagram.png"
+      ],
+      "returned_ids": [
+        "pdf:specs/2407.01449v6.pdf#p6",
+        "pdf:specs/2407.01449v6.pdf#p2",
+        "pdf:specs/2407.01449v6.pdf#p3",
+        "pdf:specs/2407.01449v6.pdf#p8",
+        "pdf:specs/2407.01449v6.pdf#p23"
+      ],
+      "scores": [
+        0.7593865,
+        0.7043437,
+        0.68191797,
+        0.5931622,
+        0.5637388
+      ],
+      "hit": false
+    },
+    {
+      "query": "low-rank adaptation of large language models",
+      "expected": [],
+      "negative": true,
+      "returned_ids": [
+        "pdf:specs/2407.01449v6.pdf#p13",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p3",
+        "pdf:specs/Fine-Tune_Your_Own_LLM_for_Free_on_a_Kaggle_GPU_in_30_Minutes.pdf#p16",
+        "pdf:specs/2407.01449v6.pdf#p15",
+        "pdf:specs/2407.01449v6.pdf#p3"
+      ],
+      "scores": [
+        0.8405867,
+        0.6241337,
+        0.54492307,
+        0.3078785,
+        0.28790843
+      ],
+      "false_positive": true
+    },
+    {
+      "query": "scaled dot-product attention formula",
+      "expected": [],
+      "negative": true,
+      "returned_ids": [],
+      "scores": [],
+      "false_positive": false
+    },
+    {
+      "query": "best recipe for a three-cheese lasagna",
+      "expected": [],
+      "negative": true,
+      "returned_ids": [],
+      "scores": [],
+      "false_positive": false
+    },
+    {
+      "query": "quarterly earnings report and revenue guidance for a public company",
+      "expected": [],
+      "negative": true,
+      "returned_ids": [],
+      "scores": [],
+      "false_positive": false
+    },
+    {
+      "query": "how to configure a Kubernetes ingress controller with TLS termination",
+      "expected": [],
+      "negative": true,
+      "returned_ids": [],
+      "scores": [],
+      "false_positive": false
+    }
+  ]
+}

@@ -80,6 +80,15 @@ RRF_K = 20
 # unrelated PDF-page confusion (not a table), scoring 0.84. See
 # eval/run.py's false_positive_rate() and eval/labels.yaml's negative
 # labels for the mechanism.
+#
+# Label-set note: the "19/25" above is against the *pre-relabel* labels.yaml.
+# 4 of those 25 positives pointed at pdf ids (LoRA, attention-formula) that
+# don't exist in the committed 76-row index -- a self-contradiction with the
+# negative labels asserting the same topics unanswerable (see labels.yaml's
+# "--- pdfs ---" comment). Those 4 were removed and replaced with 3 labels
+# against content the committed corpus actually has, so hit-rate@5 is no
+# longer directly comparable to 19/25 -- see eval_runs/baseline.json for the
+# current reference point.
 MIN_SCORE_THRESHOLD = 0.10
 
 # Table ingestion: cap embedded rows so a huge CSV doesn't hard-fail on embed
