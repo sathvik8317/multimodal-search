@@ -20,6 +20,11 @@ htmlcov/
 # chunks.lance's data files, not as loose files.
 /data/thumbnails/specs/2106.09685v2.pdf#*
 /data/thumbnails/specs/NIPS-2017-attention-is-all-you-need-Paper.pdf#*
+# Uploaded-file thumbnails stay ephemeral/local or move to R2 (see
+# server.py's comment) -- unlike the curated corpus's thumbnails above,
+# these were never meant to be committed. Was only uncommitted by luck
+# (untracked, not actually excluded) until this rule.
+/data/thumbnails/uploads/
 
 # Vite build output -- regenerate with `npm install && npm run build` in frontend/.
 # The tracked .gitkeep is load-bearing, not cosmetic: StaticFiles(directory=...)
@@ -35,6 +40,10 @@ src/mmsearch/api/static/*
 
 # live session working log -- local paths/session IDs, not a project artifact
 HANDOFF.md
+# per-session archived copies of the above -- same rationale, one per session
+.claude/handoff-archive/
+# Playwright MCP tool output (page snapshots/screenshots) -- ephemeral, local
+.playwright-mcp/
 
 # corpus/ -- specific files excluded by license or size, not a blanket exclusion.
 # See corpus/README.md for what's excluded, why, and where to source it.
