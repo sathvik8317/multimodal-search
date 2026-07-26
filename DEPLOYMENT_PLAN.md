@@ -491,31 +491,50 @@ state" premise §1/§2 relied on — the fix is Cloudflare R2, not a Render
 persistent disk (keeps the Free instance and its $0/mo; a paid disk would
 have cost $7+/mo for the same problem). Render stays on Free, no disk.
 
-**Additional environment variables**, on top of the §4 table:
+**Status: done.** Both the LanceDB index and uploaded-file storage now live
+in one Cloudflare R2 bucket, `multimodal-search-uploads` — the index under
+its `lancedb/` prefix, uploads under their own `uploads/<uploader>/...`
+prefix (see Moderation below). Search, `/upload`, and persistence across a
+redeploy have been manually verified working against this bucket.
+
+**Environment variables**, on top of the §4 table:
 
 | Variable | Value | Notes |
 |---|---|---|
-| `MMSEARCH_LANCEDB_URI` | `s3://<bucket>/lancedb` | switches `db.open_table()` from the local committed path to R2; unset = local (dev unchanged) |
+| `MMSEARCH_LANCEDB_URI` | `s3://multimodal-search-uploads/lancedb` | switches `db.open_table()` from the local committed path to R2; unset = local (dev unchanged) |
 | `AWS_ACCESS_KEY_ID` | R2 API token key | standard AWS SDK name — shared by LanceDB's object store and `storage/r2.py`'s boto3 client |
 | `AWS_SECRET_ACCESS_KEY` | R2 API token secret | " |
 | `AWS_ENDPOINT_URL` | `https://<accountid>.r2.cloudflarestorage.com` | " |
 | `AWS_REGION` | `auto` | R2's own recommended value |
-| `MMSEARCH_R2_BUCKET` | bucket name | uploaded thumbnails only; curated thumbnails stay local/in-git |
+| `MMSEARCH_R2_BUCKET` | `multimodal-search-uploads` | uploaded thumbnails only; curated thumbnails stay local/in-git. Deliberately the *same* bucket as `MMSEARCH_LANCEDB_URI` above -- one bucket for both, not two. |
 | `MMSEARCH_UPLOAD_RATE_LIMIT_MAX` | *(optional, default 5)* | `/upload`'s own budget, separate from `/search`'s |
 
-**One-time setup, in order, before the first `/upload`:**
+**Setup performed (for reference / re-doing this on a fresh bucket):**
 
-1. Create the R2 bucket and an API token scoped to it.
+1. Created the R2 bucket (`multimodal-search-uploads`) and an API token
+   scoped to it.
 2. Set the env vars above in the Render dashboard.
-3. Run `python scripts/seed_r2.py` **once**, from a machine with those same env
-   vars set — it copies the committed local `data/lancedb` (76 rows) to R2. Idempotent:
-   safe to re-run, it no-ops once the R2 table has rows. `server.py`'s
-   `db.open_table(..., create_if_missing=False)` deliberately refuses to
-   auto-create the R2 table itself (see `db.py`) — a missing/misconfigured
-   table must fail loud (500 from the health check / first request), not
-   silently serve zero results the way the original local-disk `create_if_missing=True`
-   default would.
-4. Redeploy (or restart) so `server.py` picks up the new env vars.
+3. Ran `python scripts/seed_r2.py` once, locally, against this bucket --
+   copied the committed `data/lancedb` (76 rows, including the
+   `vector_openai` backfill and RRF eligibility fix from the same session)
+   to `s3://multimodal-search-uploads/lancedb`. Verified directly against
+   R2 afterward (not local disk): 76 rows, 0 rows with a NULL
+   `vector_openai`, modality counts matching the local index exactly.
+   `seed_r2.py` is idempotent -- safe to re-run, it no-ops once the R2
+   table has rows. `server.py`'s `db.open_table(..., create_if_missing=False)`
+   deliberately refuses to auto-create the R2 table itself (see `db.py`) --
+   a missing/misconfigured table must fail loud (500 from the health check /
+   first request), not silently serve zero results the way the original
+   local-disk `create_if_missing=True` default would.
+4. Redeployed so `server.py` picked up the new env vars; confirmed
+   `/search`, `/upload`, and data persisting across that redeploy all work
+   against the R2-hosted table.
+
+Local dev's `.env` does **not** set `MMSEARCH_LANCEDB_URI` -- it stays
+commented out so local runs (ingest, eval, manual testing) fall back to
+`data/lancedb` on local disk, not the live R2 table. Setting it locally
+would make any local re-ingest, eval run, or test upload write directly
+into the same table the deployed site serves.
 
 **Moderation:** `scripts/delete_upload.py <uploader>` (or `--all-uploads`)
 deletes rows by their `uploads/<uploader>/...` `source_path` prefix — the
