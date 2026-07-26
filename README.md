@@ -1,7 +1,7 @@
 # Multimodal Search for Engineers
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-296%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-433%20passing-brightgreen)
 
 A search system that unifies PDFs, diagrams, tables, and code into **one
 searchable index**: two embedding spaces (Cohere Embed v4 for page/diagram
@@ -10,12 +10,14 @@ LanceDB table, hybrid retrieval (two vector retrievers + full-text, fused via
 RRF) with Cohere Rerank v3 on top. Built to answer a question a
 single-modality search tool can't: "which of my papers, diagrams,
 spreadsheets, and source files actually talks about this," in one query.
+The UI also supports uploading new files (PDF, image, code, CSV, Excel)
+directly into the live index -- see [Uploading files](#uploading-files).
 
 ## Screenshots
 
-The idle search page:
+The idle search page, with the upload panel below it:
 
-![Idle search page](docs/screenshots/01-idle-search.png)
+![Idle search page with the upload panel](docs/screenshots/01-idle-search.png)
 
 A PDF result for "what is low-rank adaptation of large language models":
 
@@ -112,6 +114,30 @@ To iterate on the UI itself, run Vite's dev server alongside uvicorn. It proxies
 cd frontend && npm run dev      # http://127.0.0.1:5173
 ```
 
+## Uploading files
+
+The UI's "Add files to the index" panel (below the search box) lets you add
+new files to the live index without re-running the ingest CLI: PDF, image
+(`.png`/`.jpg`/`.jpeg`/`.gif`/`.bmp`), code (`.py`), CSV, or Excel (`.xlsx`),
+one or several at a time. Behind it, `POST /upload` (same `X-API-Key` gate as
+`/search`, its own rate limit -- 20 uploads/min, separate from search's
+limit) validates each file's actual content against its extension (magic
+bytes for binary types, decodability for `.py`/`.csv`) rather than trusting
+the filename, caps uploads at 10 MB, and routes it through the same
+per-modality ingestion path as the CLI (PDF page rasterization + text-layer
+extraction, tree-sitter code chunking, CSV/xlsx-to-markdown, VLM captioning
+for images) before upserting it into the same LanceDB table `/search`
+queries:
+
+```
+curl -H "X-API-Key: your-own-shared-secret-here" \
+     -F "file=@paper.pdf" -F "uploader=you" \
+     http://127.0.0.1:8000/upload
+```
+
+Known gap: uploading the same file twice creates duplicate rows -- there's
+no content-hash or id-collision check yet.
+
 ## Deployment
 
 Deployed to Render as a read-only query service over the already-ingested
@@ -125,81 +151,75 @@ the security posture changes that come with being genuinely public are in
 
 ## Eval results
 
-Hit-rate@5 against 25 hand-written labels
-([`eval/labels.yaml`](src/mmsearch/eval/labels.yaml)) on the real ingested
-corpus, measured after the Cohere/OpenAI embedding split
-([`EMBEDDING_MIGRATION_PLAN.md`](EMBEDDING_MIGRATION_PLAN.md)), across all
-three retrieval modes:
+Hit-rate@5 and false-positive-rate against 24 positive + 5 negative labels
+([`eval/labels.yaml`](src/mmsearch/eval/labels.yaml)) on the real committed
+corpus, measured with the eval harness's own CLI (`mmsearch-eval`,
+[`src/mmsearch/eval/cli.py`](src/mmsearch/eval/cli.py) -- `--out` for JSON
+reports, `--compare` to diff two runs, `--ablations` for all three modes):
 
 | | vector-only | rrf-only | rrf+rerank |
 |---|---|---|---|
-| **Aggregate** | 0.880 | 0.920 | 0.920 |
-| *per-modality* | | | |
-| - code | 0.900 | 0.800 | 1.000 |
-| - diagram | 1.000 | 1.000 | 0.750 |
-| - pdf_page | 0.714 | 0.857 | 0.714 |
-| - table | 0.800 | 1.000 | 1.000 |
-| *per-text_source* | | | |
-| - code_source | 0.900 | 0.800 | 1.000 |
-| - pdf_text_layer | 0.714 | 0.857 | 0.714 |
-| - table_markdown | 0.800 | 1.000 | 1.000 |
-| - vlm_caption | 1.000 | 1.000 | 0.750 |
+| **hit-rate@5** | 0.958 | 0.958 | **0.917** |
+| **false-positive-rate** | 1.000 | 1.000 | **0.200** |
 
-(`rrf-only` and `rrf+rerank` measured at `RRF_K=20`, re-validated against
-this three-way fusion after the migration -- see `config.py`'s comment for
-the controlled k=60-vs-k=20 comparison. `rrf+rerank` was re-measured with
-the Cohere rerank calls throttled to stay under the API key's rate limit,
-and the run log confirms zero reranker fallbacks -- these are true reranked
-numbers, not a silent RRF-order substitution.)
+Per-modality, `rrf+rerank` (the only mode `/search` actually serves): code
+1.000, diagram 0.800, pdf_page 0.600, table 1.000. `vector-only`/`rrf-only`
+have no reranker to catch a confidently-wrong candidate, hence the much
+higher false-positive-rate -- see [Known limitations](#known-limitations).
 
-**Headline finding: production mode (`rrf+rerank`) didn't move at all.**
-Aggregate hit-rate@5 is 0.920 both before and after the migration, and every
-per-modality cell matches exactly: code 1.000/1.000, diagram 0.750/0.750,
-pdf_page 0.714/0.714, table 1.000/1.000. The embedding-provider split
-achieved its cost goal (table/code/caption-text embedding moved off Cohere
-onto the much cheaper OpenAI `text-embedding-3-small`) with **no measured
-quality cost** on this eval set in the mode that actually serves `/search`.
-The likely reason: Cohere Rerank v3 re-scores the fused shortlist directly
-against the query text, which is provider-agnostic -- it doesn't care
-whether a candidate's *retrieval* signal came from Cohere-image-space,
-OpenAI-text-space, or FTS, only whether the candidate's text is relevant.
-That gives the reranker room to correct for whatever the upstream fusion
-gets slightly wrong, which is also why `vector-only` and `rrf-only` (below)
-did shift while `rrf+rerank` absorbed the difference.
+Two structural bugs were found and fixed by diffing these numbers
+before/after each change (`mmsearch-eval --compare`; full trace in
+`HANDOFF.md`):
 
-`vector-only` moved (0.960 -> 0.880) and is **not directly comparable** to
-the pre-migration number -- and not just because the embedding provider
-changed. The *mechanics* changed: pre-migration, `vector-only` was one
-ranked list from a single unified Cohere space. Post-migration, `vector-only`
-is now an internal two-way Reciprocal Rank Fusion between two *separate*
-vector spaces (Cohere image-space, OpenAI text-space) that are never
-compared to each other directly -- a query vector from one provider only
-ever competes within its own space, and the two ranked lists are RRF-fused
-the same way `rrf-only` fuses vector + FTS. So the pre/post `vector-only`
-numbers reflect two structurally different retrieval strategies, not the
-same strategy with a swapped-out embedding model. `rrf+rerank` didn't
-inherit this instability because reranking sits downstream of all of it.
+- **42 of 76 rows -- every text-layer PDF page -- had no OpenAI text
+  vector.** `ingest_pdf` embedded every page's raster into the Cohere
+  vector but only ever embedded text into the OpenAI vector for
+  scanned/captioned pages. Backfilled; zero change to `rrf+rerank` (the
+  reranker already rescued these rows), but it surfaced the next bug.
+- **`reciprocal_rank_fusion` summed scores across every list an id
+  appeared in, with no normalization for how many lists it could
+  structurally appear in.** A `pdf_page`/`diagram` row can appear in both
+  vector lists; `code`/`table` only ever has one. The plain sum rewarded
+  that extra list presence regardless of rank -- traced concretely, a code
+  row ranking #1 in its only eligible list dropped to rank 17 after
+  fusion. Fixed via an `eligible_universes` parameter on
+  `reciprocal_rank_fusion` (`retrieve/fusion.py`) that normalizes by
+  structural eligibility, not raw list count. `vector-only`/`rrf-only`
+  hit-rate@5 recovered 0.333/0.542 -> 0.958/0.958; `rrf+rerank` was
+  unaffected (0 flipped queries).
 
 ## Known limitations
 
-All three findings below were re-checked against the real post-migration
-index (raw per-retriever ranks, not just final top-5) rather than assumed
-to still hold from the pre-migration measurement.
+The findings below were re-checked against the real current index (raw
+per-retriever ranks, not just final top-5) rather than assumed to still
+hold from an earlier measurement.
 
-**Reranking can demote a correct top-ranked PDF page.** *(Unchanged --
-reproduces exactly.)* For the query `"how to fine-tune an LLM for free
-using a Kaggle GPU"`, both `vector-only` and `rrf-only` correctly rank the
-paper's actual intro page (`p1`) at rank 1, but `rrf+rerank` drops it out
-of the top 5 entirely, in favor of denser mid-document pages that share
-more surface vocabulary with the query. This is the one case on this eval
-set where reranking looks like a genuine regression, not a small-sample
-fluke: the correct page and the promoted pages are all topically relevant,
-but the reranker's judgment of "most relevant" doesn't match the eval
-label's ground truth for a tutorial-style document where the intro page is
-mostly setup rather than dense keyword content. This page's `vector_openai`
-is unset (text-layer PDF pages never get an OpenAI vector, only scanned
-pages and diagrams do), so it's driven by the same Cohere signal as before
-the migration -- consistent with it being unaffected.
+**Reranking can demote a correct top-ranked PDF page.** *(Still
+reproduces, and no longer explainable by a missing retrieval signal.)* For
+the query `"how to fine-tune an LLM for free using a Kaggle GPU"`, both
+`vector-only` and `rrf-only` correctly rank the paper's actual intro page
+(`p1`) at rank 1, but `rrf+rerank` drops it out of the top 5 entirely, in
+favor of denser mid-document pages that share more surface vocabulary with
+the query. This is the one case on this eval set where reranking looks
+like a genuine regression, not a small-sample fluke: the correct page and
+the promoted pages are all topically relevant, but the reranker's judgment
+of "most relevant" doesn't match the eval label's ground truth for a
+tutorial-style document where the intro page is mostly setup rather than
+dense keyword content. This page's `vector_openai` used to be unset
+(text-layer PDF pages had no OpenAI vector before it was backfilled) --
+every page now has one, so a missing retrieval signal is no longer the
+explanation. The reranker demotes the correct page anyway: this is
+squarely a reranker-judgment issue, not a retrieval one.
+
+**One residual false positive: a confidently-wrong reranker, not something
+a score threshold can catch.** *(Open, not addressed.)* Of the 5 negative
+labels (queries with no correct answer anywhere in the corpus), 4 correctly
+return nothing above `MIN_SCORE_THRESHOLD`. The fifth -- "low-rank
+adaptation of large language models," a topic genuinely absent from the
+committed index -- surfaces the ColPali paper at a relevance score of 0.84.
+`MIN_SCORE_THRESHOLD` only filters genuine low-confidence noise; it can't
+fix a reranker that's confidently wrong about an irrelevant candidate. A
+real fix needs a different mechanism than a score cutoff.
 
 **Sparse-text modalities losing fusion ties to dense-text competitors --
 not currently observed.** *(Original failure mode doesn't reproduce.)* The
@@ -224,7 +244,7 @@ just isn't manifesting on the current corpus and label set.
 different cause now.** The formal eval label
 `"diagram showing the transformer encoder decoder architecture"` correctly
 surfaces the right diagram at rank 1 across every retriever. The original
-claim used a shorter, ad hoc probe (not one of the 25 scored labels):
+claim used a shorter, ad hoc probe (not one of the scored labels):
 `"transformers architecture"` previously failed to surface the diagram at
 all. Rechecked: it's no longer a pure vector-retrieval failure -- the
 OpenAI caption vector actually ranks the diagram **1st** for this phrasing,
@@ -240,7 +260,7 @@ an embedding change).
 
 ## Tests
 
-296 tests, all green, all run against fakes/fixtures. No real API calls,
+433 tests, all green, all run against fakes/fixtures. No real API calls,
 no torch/GPU load except when actually exercising the local captioner:
 
 ```
