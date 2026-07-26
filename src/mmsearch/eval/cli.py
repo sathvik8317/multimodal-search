@@ -19,11 +19,32 @@ from pathlib import Path
 from lancedb.table import Table
 
 from mmsearch import config, db
-from mmsearch.eval.dataset import Label, load_labels, validate_labels
+from mmsearch.eval.dataset import load_labels, validate_labels
 from mmsearch.eval.run import EvalReport, evaluate, false_positive_rate, run_ablations
 from mmsearch.retrieve.pipeline import _VALID_MODES, build_search_fn
 from mmsearch.retrieve.types import SearchFn
 from mmsearch.schema import Modality, TextSource
+
+
+class _MemoizingEmbedder:
+    """Wraps a real EmbeddingClient so embed_query results are cached by
+    query text. Computing ablation_hit_rates means building all three modes'
+    search_fns for the same label set -- without this, each label's query
+    would be embedded once per mode (3x) against a real, rate-limited API.
+    embed_documents is untouched; the eval CLI never calls it."""
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self._cache: dict[str, list[float]] = {}
+
+    def embed_query(self, text: str) -> list[float]:
+        if text not in self._cache:
+            self._cache[text] = self._inner.embed_query(text)
+        return self._cache[text]
+
+    def embed_documents(self, items):
+        return self._inner.embed_documents(items)
+
 
 DEFAULT_LABELS_PATH = Path(__file__).parent / "labels.yaml"
 
@@ -82,34 +103,58 @@ def _run_report(
     threshold: float,
     labels_path: Path,
 ) -> dict:
+    """Full detail (per_modality/per_text_source/per_query) for `mode`, plus
+    an `ablation_hit_rates` summary for all three modes -- this is exactly
+    the data --compare needs to catch a regression in a mode other than the
+    one actually served, which a single-mode report can't see (see the
+    vector-only/rrf-only RRF-normalization regression this was built for).
+
+    All three modes' search_fns share one pair of _MemoizingEmbedder-wrapped
+    clients, so each label's query is embedded at most once per provider no
+    matter how many modes are computed -- previously each mode re-embedded
+    every query independently (3x the real API calls for no reason: fusion
+    logic differs per mode, the query embedding does not).
+    """
     labels = load_labels(labels_path)
     table = db.open_table()
     id_index = _build_id_index(table)
     validate_labels(labels, valid_ids=set(id_index))
 
     cohere_client, openai_client, reranker = _build_clients()
-    search_fn = _memoize_search(
-        build_search_fn(
-            table,
-            cohere_client,
-            openai_client,
-            reranker,
-            mode=mode,
-            min_score_threshold=threshold,
-        )
-    )
+    cohere_embedder = _MemoizingEmbedder(cohere_client)
+    openai_embedder = _MemoizingEmbedder(openai_client)
 
     positive_labels = [label for label in labels if not label.negative]
     negative_labels = [label for label in labels if label.negative]
 
-    report = evaluate(search_fn, positive_labels, id_index)
-    fp_rate = false_positive_rate(search_fn, negative_labels)
+    search_fns: dict[str, SearchFn] = {
+        m: _memoize_search(
+            build_search_fn(
+                table, cohere_embedder, openai_embedder, reranker, mode=m, min_score_threshold=threshold
+            )
+        )
+        for m in _VALID_MODES
+    }
+    reports: dict[str, EvalReport] = run_ablations(search_fns, positive_labels, id_index)
+    fp_rates = {m: false_positive_rate(search_fns[m], negative_labels) for m in _VALID_MODES}
 
-    # Every label was already queried exactly once above; this replays the
-    # memoized cache, issuing zero further search_fn calls.
+    ablation_hit_rates = {
+        m: {
+            "aggregate_hit_rate": reports[m].aggregate_hit_rate,
+            "per_modality": reports[m].per_modality,
+            "per_text_source": reports[m].per_text_source,
+            "false_positive_rate": fp_rates[m],
+        }
+        for m in _VALID_MODES
+    }
+
+    # Every label was already queried exactly once above (via evaluate() and
+    # false_positive_rate()); this replays the primary mode's memoized cache,
+    # issuing zero further search_fn calls.
+    primary_search_fn = search_fns[mode]
     per_query = []
     for label in positive_labels:
-        results = search_fn(label.query, k=config.TOP_K)
+        results = primary_search_fn(label.query, k=config.TOP_K)
         returned_ids = [r.id for r in results]
         hit = bool(set(label.expected) & set(returned_ids))
         per_query.append(
@@ -122,7 +167,7 @@ def _run_report(
             }
         )
     for label in negative_labels:
-        results = search_fn(label.query, k=config.TOP_K)
+        results = primary_search_fn(label.query, k=config.TOP_K)
         returned_ids = [r.id for r in results]
         per_query.append(
             {
@@ -138,40 +183,12 @@ def _run_report(
     return {
         "mode": mode,
         "threshold": threshold,
-        "aggregate_hit_rate": report.aggregate_hit_rate,
-        "per_modality": report.per_modality,
-        "per_text_source": report.per_text_source,
-        "false_positive_rate": fp_rate,
+        "aggregate_hit_rate": reports[mode].aggregate_hit_rate,
+        "per_modality": reports[mode].per_modality,
+        "per_text_source": reports[mode].per_text_source,
+        "false_positive_rate": fp_rates[mode],
+        "ablation_hit_rates": ablation_hit_rates,
         "per_query": per_query,
-    }
-
-
-def _run_ablations_report(*, threshold: float, labels_path: Path) -> dict:
-    labels = load_labels(labels_path)
-    table = db.open_table()
-    id_index = _build_id_index(table)
-    validate_labels(labels, valid_ids=set(id_index))
-
-    cohere_client, openai_client, reranker = _build_clients()
-    positive_labels = [label for label in labels if not label.negative]
-    negative_labels = [label for label in labels if label.negative]
-
-    search_fns: dict[str, SearchFn] = {
-        mode: build_search_fn(
-            table, cohere_client, openai_client, reranker, mode=mode, min_score_threshold=threshold
-        )
-        for mode in _VALID_MODES
-    }
-    reports: dict[str, EvalReport] = run_ablations(search_fns, positive_labels, id_index)
-
-    return {
-        mode: {
-            "aggregate_hit_rate": report.aggregate_hit_rate,
-            "per_modality": report.per_modality,
-            "per_text_source": report.per_text_source,
-            "false_positive_rate": false_positive_rate(search_fns[mode], negative_labels),
-        }
-        for mode, report in reports.items()
     }
 
 
@@ -243,6 +260,29 @@ def _print_compare(before: dict, after: dict) -> None:
         a = after["per_text_source"].get(t)
         print(f"  {t:<26} {b if b is not None else '-':>10} {a if a is not None else '-':>10}")
 
+    # Reports saved before this key existed simply omit it -- '-' placeholders
+    # keep --compare working against older files (e.g. eval_runs/baseline.json).
+    before_ablation = before.get("ablation_hit_rates", {})
+    after_ablation = after.get("ablation_hit_rates", {})
+    modes = sorted(set(before_ablation) | set(after_ablation))
+    if modes:
+        print("\nablation_hit_rates (aggregate hit-rate@5 / false-positive-rate per mode):")
+        for m in modes:
+            b = before_ablation.get(m, {})
+            a = after_ablation.get(m, {})
+            b_hr = b.get("aggregate_hit_rate")
+            a_hr = a.get("aggregate_hit_rate")
+            b_fp = b.get("false_positive_rate")
+            a_fp = a.get("false_positive_rate")
+            b_hr_s = f"{b_hr:.3f}" if b_hr is not None else "-"
+            a_hr_s = f"{a_hr:.3f}" if a_hr is not None else "-"
+            b_fp_s = f"{b_fp:.3f}" if b_fp is not None else "-"
+            a_fp_s = f"{a_fp:.3f}" if a_fp is not None else "-"
+            print(
+                f"  {m:<12} hit_rate  before={b_hr_s:>6} after={a_hr_s:>6}"
+                f"   fp_rate  before={b_fp_s:>6} after={a_fp_s:>6}"
+            )
+
     before_by_query = {q["query"]: q for q in before.get("per_query", [])}
     after_by_query = {q["query"]: q for q in after.get("per_query", [])}
     flipped = []
@@ -303,7 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         report = _attribution_report(labels_path=args.labels)
         print(json.dumps(report, indent=2))
     elif args.ablations:
-        report = _run_ablations_report(threshold=args.threshold, labels_path=args.labels)
+        full = _run_report(mode=args.mode, threshold=args.threshold, labels_path=args.labels)
+        report = full["ablation_hit_rates"]
         print(json.dumps(report, indent=2))
     elif args.sweep_threshold:
         thresholds = [float(t) for t in args.sweep_threshold.split(",")]
