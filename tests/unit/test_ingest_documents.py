@@ -67,7 +67,10 @@ def test_ingest_pdf_content_text_contains_expected_substrings(tmp_path: Path):
     assert "p99 latency" in rows[1].content_text
 
 
-def test_ingest_pdf_text_layer_rows_have_only_cohere_vector(tmp_path: Path):
+def test_ingest_pdf_text_layer_rows_get_both_vectors(tmp_path: Path):
+    # Phase 3 fix: text-layer pages used to skip the OpenAI text embed
+    # entirely (vector_openai stayed None), leaving them unreachable from the
+    # OpenAI text retriever. Every page now gets both vectors.
     pdf_path = CORPUS_DIR / "specs" / "rfc.pdf"
     rows = ingest_pdf(
         pdf_path,
@@ -78,7 +81,7 @@ def test_ingest_pdf_text_layer_rows_have_only_cohere_vector(tmp_path: Path):
     )
     for row in rows:
         assert len(row.vector_cohere) == config.COHERE_EMBED_DIM
-        assert row.vector_openai is None  # text-layer page: no caption, no OpenAI vector
+        assert len(row.vector_openai) == config.OPENAI_EMBED_DIM
 
 
 def test_ingest_pdf_writes_real_thumbnail_files(tmp_path: Path):
