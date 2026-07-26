@@ -115,6 +115,71 @@ them from env today, and moving them would churn ~20 import sites and
 `python-dotenv` comes out of `pyproject.toml`; pydantic-settings reads `.env`
 natively. `pydantic` is already present transitively via FastAPI.
 
+## Item 5 — `/upload` attack surface (later revision)
+
+`POST /upload` (design in `UPLOAD_PLAN.md`) is a write endpoint on a public
+site — meaningfully bigger attack surface than `/search`'s read-only path,
+so it gets its own review rather than reusing `/search`'s hardening as-is.
+
+**Auth: reused as-is.** `Depends(require_api_key)`, same gate, same
+fail-closed `hmac.compare_digest` check. No new auth mechanism.
+
+**Rate limit: NOT shared with `/search`.** Ingestion (embeddings + hosted
+VLM captioning + storage writes) is far more expensive per request than a
+search, so `/upload` gets its own budget (`upload_rate_limit`, default 5/60s)
+backed by a separate counter (`deps._upload_hits`) — exhausting one endpoint's
+budget never throttles the other. `deps.py`'s single sliding-window
+implementation was refactored into a factory (`_make_rate_limiter`) so both
+budgets share the tested logic without duplicating it; the existing
+`ponytail:` caveat (single-process, doesn't hold across multiple uvicorn
+workers) applies equally to both.
+
+**Size cap.** `MAX_UPLOAD_BYTES` (10 MB), enforced while reading the
+`UploadFile` in chunks rather than trusting `Content-Length` — a client can
+lie about or omit that header. This bounds what *our* code (ingest,
+embedding, storage writes) ever processes; it does not stop an oversized
+*transfer* from reaching the server, since Starlette's multipart parser has
+already spooled the full body by the time our route runs and FastAPI has no
+lower-level streaming hook. Accepted as proportionate for a friends-scale
+deployment — the upgrade path if this ever faces hostile traffic at scale is
+raw ASGI body streaming with early rejection.
+
+**Content-type validation: magic bytes, not extension.** `classify_file()`
+already routes by extension for the trusted directory-walk case
+(`ingest_corpus`); an upload is untrusted input, so `ingest/validation.py`
+additionally checks the file's actual bytes against a signature for each of
+the 7 binary types in the allowlist (`%PDF-`, PNG/JPEG/GIF/BMP/WEBP magic,
+`.xlsx`'s zip header) before it ever reaches `fitz.open()` or `PIL.Image.open()`
+— a renamed `.exe` with a `.pdf` extension is rejected at this check, not
+whatever the parser happens to do with malformed input. The two text types
+(`.py`, `.csv`) have no reliable magic bytes; they're checked for UTF-8
+decodability and rejected on NUL bytes instead. No new dependency
+(`python-magic`/libmagic) — a handful of prefix checks covers the closed,
+7-item allowlist.
+
+**Path traversal.** The uploaded filename is untrusted; `ingest/upload.py`
+takes only `Path(filename).name` (discards any `../` or absolute-path
+segments) before it ever touches the filesystem, and the uploader-supplied
+name is sanitized to `[A-Za-z0-9_-]` before becoming a directory component.
+Both are covered by direct unit tests (`test_ingest_upload.py`), not just
+inferred from the code.
+
+**Failure isolation.** A bad upload (malformed file past the magic-byte
+check, an embedding-provider error) is caught and mapped to a 4xx/422
+response — it must not 500 the whole server, matching `ingest_corpus`'s
+existing per-file `except Exception` philosophy for a directory walk, now
+applied to a single synchronous request.
+
+**Content model: no per-upload isolation, tagged instead.** Every row an
+upload produces is stamped with `metadata.uploader` and `metadata.uploaded_at`,
+and lands under a `uploads/<uploader>/...` `source_path` — the whole
+moderation surface for a shared index at friends scale is
+`scripts/delete_upload.py`, a predicate delete, run by the repo owner. Real
+per-user isolation (a namespace per uploader, scoped search) was considered
+and rejected as premature: today there is exactly one shared
+`MMSEARCH_API_KEY`, so there is no per-user identity to key isolation off of
+in the first place.
+
 ## Files touched
 
 **New**

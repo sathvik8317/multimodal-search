@@ -1,10 +1,12 @@
-"""CSV table ingestion: parses a CSV file into a single markdown-table Row."""
+"""CSV/xlsx table ingestion: parses a spreadsheet into a single markdown-table Row."""
 
 from __future__ import annotations
 
 import csv
 import json
 from pathlib import Path
+
+import openpyxl
 
 from mmsearch import config
 from mmsearch.clients.protocols import EmbedInput, EmbeddingClient
@@ -47,6 +49,35 @@ def _select_embedded_rows(
     return selected
 
 
+def _read_csv(table_path: Path) -> tuple[list[str], list[list[str]]]:
+    with open(table_path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    columns = rows[0] if rows else []
+    data_rows = rows[1:]
+    return columns, data_rows
+
+
+def _stringify_cell(value: object) -> str:
+    return "" if value is None else str(value)
+
+
+def _read_xlsx(table_path: Path) -> tuple[list[str], list[list[str]]]:
+    # read_only: avoids loading the whole workbook into memory; data_only:
+    # cell.value is the last-computed value for formula cells, not the
+    # formula string itself.
+    workbook = openpyxl.load_workbook(table_path, read_only=True, data_only=True)
+    try:
+        rows = [
+            [_stringify_cell(cell) for cell in row]
+            for row in workbook.active.iter_rows(values_only=True)
+        ]
+    finally:
+        workbook.close()
+    columns = rows[0] if rows else []
+    data_rows = rows[1:]
+    return columns, data_rows
+
+
 def ingest_table(
     table_path: Path,
     corpus_root: Path,
@@ -54,12 +85,10 @@ def ingest_table(
     max_rows: int = config.MAX_TABLE_ROWS,
     max_chars: int = config.MAX_TABLE_EMBED_CHARS,
 ) -> Row:
-    with open(table_path, newline="", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        rows = list(reader)
-
-    columns = rows[0] if rows else []
-    data_rows = rows[1:]
+    if table_path.suffix.lower() == ".xlsx":
+        columns, data_rows = _read_xlsx(table_path)
+    else:
+        columns, data_rows = _read_csv(table_path)
     total_rows = len(data_rows)
     embedded_rows = _select_embedded_rows(columns, data_rows, max_rows, max_chars)
     truncated = len(embedded_rows) < total_rows

@@ -25,6 +25,7 @@ EMBEDDERS = Embedders(image=FakeEmbeddingClient(), text=FakeEmbeddingClient())
         ("docs/scan.bmp", "diagram"),
         ("docs/modern.webp", "diagram"),
         ("data/latency.csv", "table"),
+        ("data/latency.xlsx", "table"),
         ("src/ingest/base.py", "code"),
     ],
 )
@@ -36,7 +37,7 @@ def test_classify_file_is_case_insensitive_on_extension():
     assert classify_file(Path("docs/AUTH-FLOW.PNG")) == "diagram"
 
 
-@pytest.mark.parametrize("filename", ["README.md", "notes.txt", "data.xlsx", ".gitignore", "archive.zip"])
+@pytest.mark.parametrize("filename", ["README.md", "notes.txt", ".gitignore", "archive.zip"])
 def test_classify_file_returns_none_for_unsupported_extensions(filename):
     assert classify_file(Path(filename)) is None
 

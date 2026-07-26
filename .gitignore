@@ -41,3 +41,9 @@ HANDOFF.md
 corpus/specs/2106.09685v2.pdf
 corpus/specs/NIPS-2017-attention-is-all-you-need-Paper.pdf
 corpus/data/Bank_Marketing_Dataset.csv
+
+# mmsearch-eval --out reports (eval/cli.py). baseline.json is the committed
+# reference point everything else diffs against; ablation/attribution/sweep
+# dumps are diagnostic scratch, regenerate on demand.
+/eval_runs/*
+!/eval_runs/baseline.json

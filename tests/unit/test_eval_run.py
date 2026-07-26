@@ -3,7 +3,7 @@ import dataclasses
 import pytest
 
 from mmsearch.eval.dataset import Label, load_labels
-from mmsearch.eval.run import EvalReport, evaluate, run_ablations, score_hit
+from mmsearch.eval.run import EvalReport, evaluate, false_positive_rate, run_ablations, score_hit
 from mmsearch.retrieve.types import SearchResult
 from mmsearch.schema import Modality, TextSource
 
@@ -252,6 +252,103 @@ def test_run_ablations_returns_exact_keys_and_independent_reports():
     assert reports["vector-only"].aggregate_hit_rate == 0.0
     assert reports["rrf-only"].aggregate_hit_rate == 1.0
     assert reports["rrf+rerank"].aggregate_hit_rate == 0.5
+
+
+# --- false_positive_rate(): negative labels ----------------------------------------------
+
+
+def test_false_positive_rate_counts_any_nonempty_result_as_false_positive():
+    labels = [Label(query="no answer exists", negative=True)]
+
+    def fake_search(query: str, k: int = 5):
+        return [_result("pdf:a.pdf#p1")]  # anything nonempty -> false positive
+
+    assert false_positive_rate(fake_search, labels, k=5) == 1.0
+
+
+def test_false_positive_rate_zero_when_negative_label_returns_empty():
+    labels = [Label(query="no answer exists", negative=True)]
+
+    def fake_search(query: str, k: int = 5):
+        return []
+
+    assert false_positive_rate(fake_search, labels, k=5) == 0.0
+
+
+def test_false_positive_rate_averages_across_negative_labels():
+    labels = [
+        Label(query="neg1", negative=True),
+        Label(query="neg2", negative=True),
+    ]
+    canned = {"neg1": [_result("pdf:a.pdf#p1")], "neg2": []}
+
+    def fake_search(query: str, k: int = 5):
+        return canned[query]
+
+    assert false_positive_rate(fake_search, labels, k=5) == 0.5
+
+
+def test_false_positive_rate_ignores_positive_labels():
+    labels = [
+        Label(query="positive", expected=("pdf:a.pdf#p1",)),
+        Label(query="negative", negative=True),
+    ]
+    calls = []
+
+    def fake_search(query: str, k: int = 5):
+        calls.append(query)
+        if query == "positive":
+            return [_result("pdf:a.pdf#p1")]
+        return []
+
+    rate = false_positive_rate(fake_search, labels, k=5)
+
+    assert rate == 0.0
+    assert calls == ["negative"]  # the positive label was never queried by this function
+
+
+def test_false_positive_rate_returns_zero_for_no_negative_labels():
+    labels = [Label(query="positive", expected=("pdf:a.pdf#p1",))]
+
+    def fake_search(query: str, k: int = 5):
+        raise AssertionError("should not be called -- no negative labels present")
+
+    assert false_positive_rate(fake_search, labels, k=5) == 0.0
+
+
+def test_false_positive_rate_default_k_uses_config_top_k():
+    from mmsearch import config
+
+    labels = [Label(query="neg", negative=True)]
+    seen_k = {}
+
+    def fake_search(query: str, k: int = 5):
+        seen_k["k"] = k
+        return []
+
+    false_positive_rate(fake_search, labels)
+    assert seen_k["k"] == config.TOP_K
+
+
+def test_false_positive_rate_composes_with_real_load_labels(tmp_path):
+    path = tmp_path / "labels.yaml"
+    path.write_text(
+        """
+        - query: "positive query"
+          expected: ["code:a.py#f"]
+        - query: "negative query one"
+          negative: true
+        - query: "negative query two"
+          negative: true
+        """
+    )
+    labels = load_labels(path)
+    canned = {"negative query one": [_result("pdf:x.pdf#p1")], "negative query two": []}
+
+    def fake_search(query: str, k: int = 5):
+        return canned[query]
+
+    assert false_positive_rate(fake_search, labels, k=5) == 0.5
 
 
 # --- integration: composes with the real dataset.load_labels ----------------------------

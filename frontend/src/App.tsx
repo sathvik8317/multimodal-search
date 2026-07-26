@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { search, setApiKey, UnauthorizedError, type SearchResult } from "./api";
 import { SearchBar } from "./components/SearchBar";
 import { ResultsList, type Status } from "./components/ResultsList";
+import { UploadPanel } from "./components/UploadPanel";
 
 export default function App() {
   const [query, setQuery] = useState("");
@@ -103,6 +104,8 @@ export default function App() {
         <main>
           <ResultsList status={status} results={results} error={error} />
         </main>
+
+        <UploadPanel onUnauthorized={() => setNeedsKey(true)} />
       </div>
     </div>
   );

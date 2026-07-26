@@ -10,10 +10,20 @@ from mmsearch import config
 from mmsearch.schema import ARROW_SCHEMA, Row, rows_to_table
 
 
-def open_table(uri: str | Path = config.LANCEDB_URI, table_name: str = config.TABLE_NAME) -> Table:
-    db = lancedb.connect(str(uri))
+def open_table(
+    uri: str | Path = config.LANCEDB_URI,
+    table_name: str = config.TABLE_NAME,
+    storage_options: dict[str, str] | None = None,
+    create_if_missing: bool = True,
+) -> Table:
+    db = lancedb.connect(str(uri), storage_options=storage_options)
     if table_name in db.list_tables().tables:
         return db.open_table(table_name)
+    if not create_if_missing:
+        raise RuntimeError(
+            f"LanceDB table {table_name!r} not found at {uri} and create_if_missing=False "
+            "-- refusing to silently serve an empty table (likely a misconfigured uri/credentials)"
+        )
     return db.create_table(table_name, schema=ARROW_SCHEMA)
 
 

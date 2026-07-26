@@ -89,6 +89,64 @@ def test_label_is_immutable():
         label.query = "changed"  # type: ignore[misc]
 
 
+def test_label_negative_defaults_to_false():
+    label = Label(query="q", expected=("code:a.py#f",))
+    assert label.negative is False
+
+
+# --- negative labels (queries with no correct answer in the corpus) ---------------------
+
+def test_load_labels_parses_negative_label_without_expected(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        - query: "low-rank adaptation of large language models"
+          negative: true
+        """,
+    )
+    labels = load_labels(path)
+    assert labels == [
+        Label(query="low-rank adaptation of large language models", expected=(), negative=True)
+    ]
+
+
+def test_load_labels_negative_label_rejects_an_expected_list(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        - query: "hello"
+          negative: true
+          expected: ["code:a.py#f"]
+        """,
+    )
+    with pytest.raises(ValueError, match="negative"):
+        load_labels(path)
+
+
+def test_load_labels_mixes_positive_and_negative_labels(tmp_path):
+    path = _write(
+        tmp_path,
+        """
+        - query: "positive query"
+          expected: ["code:a.py#f"]
+        - query: "negative query"
+          negative: true
+        """,
+    )
+    labels = load_labels(path)
+    assert len(labels) == 2
+    assert labels[0].negative is False
+    assert labels[1].negative is True
+    assert labels[1].expected == ()
+
+
+def test_load_labels_missing_expected_key_still_rejected_when_not_negative(tmp_path):
+    # Regression guard: only an explicit `negative: true` may omit `expected`.
+    path = _write(tmp_path, '- query: "hello"')
+    with pytest.raises(ValueError, match="expected"):
+        load_labels(path)
+
+
 # --- validate_labels (typo guard) --------------------------------------------------------
 
 def test_validate_labels_passes_when_all_ids_known():

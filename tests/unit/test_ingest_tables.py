@@ -1,5 +1,8 @@
 import json
 
+import openpyxl
+import pytest
+
 from mmsearch import config
 from mmsearch.clients.fakes import FakeEmbeddingClient
 from mmsearch.ingest.tables import ingest_table
@@ -175,3 +178,98 @@ def test_ingest_table_is_deterministic():
     assert row1.id == row2.id
     assert row1.content_text == row2.content_text
     assert row1.vector_openai == row2.vector_openai
+
+
+# --- .xlsx support -----------------------------------------------------------------------
+#
+# xlsx feeds the exact same _rows_to_markdown/_select_embedded_rows path CSV
+# does (see ingest/tables.py) -- these tests establish parity against the
+# equivalent CSV content, plus xlsx-specific cell-typing behavior
+# (openpyxl yields typed/None values; CSV's csv.reader always yields str).
+
+def _write_xlsx(path, header: list[str], data_rows: list[list]) -> None:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(header)
+    for row in data_rows:
+        ws.append(row)
+    wb.save(path)
+
+
+def test_ingest_table_xlsx_returns_row_with_correct_id(tmp_path):
+    xlsx_path = tmp_path / "latency.xlsx"
+    _write_xlsx(xlsx_path, ["endpoint", "p50_ms"], [["/search", 10], ["/upload", 20]])
+
+    row = ingest_table(xlsx_path, tmp_path, FakeEmbeddingClient())
+
+    assert row.id == "tbl:latency.xlsx"
+
+
+def test_ingest_table_xlsx_sets_modality_and_text_source(tmp_path):
+    xlsx_path = tmp_path / "latency.xlsx"
+    _write_xlsx(xlsx_path, ["a", "b"], [["1", "2"]])
+
+    row = ingest_table(xlsx_path, tmp_path, FakeEmbeddingClient())
+
+    assert row.modality == Modality.TABLE
+    assert row.text_source == TextSource.TABLE_MARKDOWN
+
+
+def test_ingest_table_xlsx_content_matches_equivalent_csv(tmp_path):
+    header = ["endpoint", "p50_ms", "p95_ms"]
+    data_rows = [["/search", "10", "20"], ["/upload", "30", "40"]]
+
+    csv_path = tmp_path / "latency.csv"
+    csv_lines = [",".join(header)] + [",".join(row) for row in data_rows]
+    csv_path.write_text("\n".join(csv_lines) + "\n")
+
+    xlsx_path = tmp_path / "latency.xlsx"
+    _write_xlsx(xlsx_path, header, [[cell for cell in row] for row in data_rows])
+
+    csv_row = ingest_table(csv_path, tmp_path, FakeEmbeddingClient())
+    xlsx_row = ingest_table(xlsx_path, tmp_path, FakeEmbeddingClient())
+
+    assert xlsx_row.content_text == csv_row.content_text
+
+
+def test_ingest_table_xlsx_stringifies_numeric_and_none_cells(tmp_path):
+    xlsx_path = tmp_path / "mixed.xlsx"
+    # openpyxl yields typed values (int/float) and None for empty cells --
+    # _rows_to_markdown does str.join, which crashes on non-str cells if the
+    # xlsx reader doesn't stringify them first.
+    _write_xlsx(xlsx_path, ["id", "value", "note"], [[1, 3.5, None], [2, None, "ok"]])
+
+    row = ingest_table(xlsx_path, tmp_path, FakeEmbeddingClient())
+
+    assert "| 1 | 3.5 |  |" in row.content_text
+    assert "| 2 |  | ok |" in row.content_text
+
+
+def test_ingest_table_xlsx_metadata_has_correct_row_and_column_counts(tmp_path):
+    xlsx_path = tmp_path / "t.xlsx"
+    _write_xlsx(xlsx_path, ["a", "b", "c"], [["1", "2", "3"], ["4", "5", "6"]])
+
+    row = ingest_table(xlsx_path, tmp_path, FakeEmbeddingClient())
+
+    metadata = json.loads(row.metadata)
+    assert metadata["n_rows"] == 2
+    assert metadata["n_cols"] == 3
+    assert metadata["columns"] == ["a", "b", "c"]
+
+
+def test_ingest_table_xlsx_reads_only_the_active_sheet(tmp_path):
+    xlsx_path = tmp_path / "multi_sheet.xlsx"
+    wb = openpyxl.Workbook()
+    ws1 = wb.active
+    ws1.title = "first"
+    ws1.append(["a", "b"])
+    ws1.append(["1", "2"])
+    ws2 = wb.create_sheet("second")
+    ws2.append(["x", "y"])
+    ws2.append(["should", "not-appear"])
+    wb.save(xlsx_path)
+
+    row = ingest_table(xlsx_path, tmp_path, FakeEmbeddingClient())
+
+    assert "should" not in row.content_text
+    assert "not-appear" not in row.content_text
